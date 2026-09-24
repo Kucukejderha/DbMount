@@ -1,0 +1,7 @@
+# derleyici artiklari
+*.TMP
+dist/*.pdb
+testdata/
+outputs/
+harness*.exe
+*-debug.exe

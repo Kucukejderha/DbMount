@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>ASCOS DbMount — Kullanıcı Kılavuzu</title>
+<style>
+body { font-family: "Segoe UI", sans-serif; margin: 40px auto; max-width: 860px; color: #1E2B3D; background: #F4F7FB; }
+h1 { font-size: 26px; }
+h2 { font-size: 19px; margin-top: 36px; color: #19304E; }
+.card { background: #fff; border: 1px solid #D2DCE8; border-radius: 6px; padding: 24px 28px; margin: 18px 0; }
+code { background: #EEF3F9; border: 1px solid #D2DCE8; border-radius: 4px; padding: 1px 6px; font-family: Consolas, monospace; font-size: 13px; }
+.note { background: #E8F1FB; border: 1px solid #BED5EE; border-radius: 6px; padding: 12px 16px; color: #2A5B8F; margin: 18px 0; }
+.warn { background: #FDF1F0; border: 1px solid #F0C4C0; border-radius: 6px; padding: 12px 16px; color: #9E3B36; margin: 18px 0; }
+.step { font-weight: 600; color: #2B6FB8; }
+table { border-collapse: collapse; width: 100%; }
+td, th { border: 1px solid #D2DCE8; padding: 8px 10px; text-align: left; font-size: 14px; }
+th { background: #EEF3F9; }
+</style>
+</head>
+<body>
+<h1>ASCOS DbMount Kullanıcı Kılavuzu</h1>
+
+<div class="card">
+<p>ASCOS DbMount; bir klasördeki MSSQL veritabanı dosyalarını (MDF/NDF/LDF) SQL Server'a
+<b>toplu veya tek tek bağlamanızı (mount/attach)</b> ve <b>ayırmanızı (unmount/detach)</b> sağlar.
+Dosyalar hiçbir zaman taşınmaz veya silinmez; veritabanları bulundukları klasörde kalır.</p>
+</div>
+
+<h2>1. Sunucuya bağlanma</h2>
+<div class="card">
+<p><span class="step">1.</span> <b>SQL Server</b> kutusundan örneği seçin. Yerel örnekler otomatik listelenir
+(<code>localhost</code>, <code>localhost\SQLEXPRESS</code> …). Uzak sunucu için
+<code>SUNUCUAD\ORNEK</code> biçiminde yazın.</p>
+<p><span class="step">2.</span> <b>Kullanıcı adı / Şifre</b> satırında kimlik doğrulamasını seçin:</p>
+<ul>
+<li><b>Windows kimlik doğrulaması</b> — mevcut Windows hesabınızla bağlanır.</li>
+<li><b>SQL Server kimlik doğrulaması</b> — kullanıcı adı (ör. <code>sa</code>) ve parola girin.
+<b>Parolayı anımsa</b> işaretlenirse parola Windows DPAPI ile şifrelenir.</li>
+</ul>
+<p><span class="step">3.</span> <b>Bağlantıyı sına</b> ile bağlantıyı doğrulayın. Başarılıysa sol alt köşede
+yeşil <b>● Bağlı</b> durumu görünür.</p>
+</div>
+
+<h2>2. Dosya yolunu seçme</h2>
+<div class="card">
+<p><b>Dosya yolu</b> satırındaki <b>Klasör seç…</b> düğmesiyle veritabanı dosyalarının
+bulunduğu klasörü seçin. Klasördeki tüm <code>.mdf</code> dosyaları listelenir;
+her satırda durum (Bağlı / Bağlı değil) ve dosya boyutları gösterilir.</p>
+<p class="note">ⓘ Yalnızca seçilen ana klasör taranır; alt klasörlere bakılmaz.</p>
+</div>
+
+<h2>3. İşlem onayı ve ön denetim</h2>
+<div class="card">
+<p>Her <b>Ekle</b> veya <b>Çıkar</b> işleminden önce <b>onay penceresi</b> açılır:</p>
+<ul>
+<li>İşlenecek veritabanları, eylemleri ve dosya boyutları listelenir.</li>
+<li>Çıkarılacak bir veritabanı başka bir uygulama tarafından kullanılıyorsa
+kırmızı uyarı gösterilir: <b>"N etkin bağlantı var — Logo/Netsis gibi bir uygulama
+bu veritabanını kullanıyor olabilir; işlem bağlantıları kapatacak."</b></li>
+<li>Eklenecek dosya başka bir uygulama veya örnek tarafından kilitliyse uyarı gösterilir.</li>
+</ul>
+<p>Listeyi gözden geçirip <b>Devam et</b> demeden hiçbir işlem başlamaz.</p>
+</div>
+
+<h2>4. Ekleme (Mount/Attach)</h2>
+<div class="card">
+<p><span class="step">1.</span> Listeden eklenecek veritabanlarını işaretleyin veya
+<b>Tümünü seç</b> düğmesini kullanın.</p>
+<p><span class="step">2.</span> <b>Ekle</b> düğmesine basın; onay penceresinde <b>Devam et</b> deyin.</p>
+<p><span class="step">3.</span> İşlem sonunda her satırda <b>Eklendi</b> sonucu görünür ve durumlar güncellenir.</p>
+<ul>
+<li>Veritabanına ait NDF/LDF dosyaları MDF başlığından otomatik bulunur.</li>
+<li>LDF dosyası yoksa log dosyası yeniden oluşturulur.</li>
+<li>Aynı adlı bir veritabanı sunucuda zaten bağlıysa uyarı verilir.</li>
+</ul>
+</div>
+
+<h2>5. Çıkarma (Unmount/Detach)</h2>
+<div class="card">
+<p><span class="step">1.</span> Çıkarılacak veritabanlarını işaretleyin (yalnızca <b>Bağlı</b> olanlar çıkarılabilir).</p>
+<p><span class="step">2.</span> <b>Çıkar</b> düğmesine basın; onay penceresindeki uyarıları gözden geçirip <b>Devam et</b> deyin.</p>
+<p><span class="step">3.</span> Etkin bağlantılar otomatik kapatılır (<code>SINGLE_USER WITH ROLLBACK IMMEDIATE</code>)
+ve veritabanı sunucudan ayrılır. Dosyalar klasörde kalır; istenirse taşınabilir.</p>
+</div>
+
+<h2>Sık karşılaşılan hatalar</h2>
+<div class="card">
+<table>
+<tr><th>Hata</th><th>Anlamı / çözümü</th></tr>
+<tr><td>Erişim engellendi (5120)</td><td>SQL Server hizmet hesabının klasöre okuma/yazma izni yok. NTFS izni verin.</td></tr>
+<tr><td>Dosya kilitli (OS hatası 32)</td><td>Veritabanı zaten bağlı veya başka bir örnekte açık.</td></tr>
+<tr><td>Veritabanı sürümü daha yeni</td><td>Dosya hedef sunucudan daha yeni bir sürümde; güncel bir örneğe bağlanın.</td></tr>
+<tr><td>Oturum açılamadı (18456)</td><td>Kullanıcı adı/parola veya Windows yetkisi geçersiz.</td></tr>
+<tr><td>Sunucuya ulaşılamadı</td><td>Sunucu adını ve SQL Server hizmetinin çalıştığını denetleyin.</td></tr>
+</table>
+</div>
+
+<div class="warn">ⓘ Ekleme ve çıkarma işlemi için hedef sunucuda <b>sysadmin</b> yetkisi gerekir.</div>
+
+<p style="color:#617187; font-size:13px;">ASCOS DbMount 1.0.0 — <a href="https://rotaniz.com/ascos-araclar/">rotaniz.com/ascos-araclar</a> · AGPL-3.0</p>
+</body>
+</html>
