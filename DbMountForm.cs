@@ -29,20 +29,25 @@ namespace DbMount
         private readonly TextBox folderBox = new TextBox();
         private readonly Button test = new Button();
         private readonly Button browse = new Button();
+        private readonly Button pickFiles = new Button();
         private readonly Button refresh = new Button();
         private readonly Button selectAll = new Button();
         private readonly Button clearSelection = new Button();
         private readonly Button attach = new Button();
         private readonly Button detach = new Button();
         private readonly Button guide = new Button();
+        private readonly Button openLog = new Button();
+        private readonly Button sendLog = new Button();
         private readonly Label connStatus = new Label();
         private readonly Label status = new Label();
         private readonly Label railStatus = new Label();
         private readonly CheckedListBox list = new CheckedListBox();
 
         private readonly List<DatabaseFile> items = new List<DatabaseFile>();
+        private readonly List<DatabaseFile> extraItems = new List<DatabaseFile>();
         private readonly BackgroundWorker testWorker = new BackgroundWorker();
         private readonly BackgroundWorker batchWorker = new BackgroundWorker();
+        private readonly BackgroundWorker uploadWorker = new BackgroundWorker();
         private bool busy;
         private bool connected;
         private int batchTotal;
@@ -66,10 +71,13 @@ namespace DbMount
 
             ConfigureButton(test, "Bağlantıyı sına", false);
             ConfigureButton(browse, "Klasör seç…", false);
+            ConfigureButton(pickFiles, "Dosya seç…", false);
             ConfigureButton(refresh, "Yenile", false);
             ConfigureButton(selectAll, "Tümünü seç", false);
             ConfigureButton(clearSelection, "Seçimi temizle", false);
             ConfigureButton(guide, "Kılavuz", false);
+            ConfigureButton(openLog, "Kaydı aç", false);
+            ConfigureButton(sendLog, "Hata kaydı gönder", false);
             ConfigureButton(detach, "Çıkar", false);
             ConfigureButton(attach, "Ekle", true);
 
@@ -122,14 +130,20 @@ namespace DbMount
             batchWorker.DoWork += BatchWorkerDoWork;
             batchWorker.ProgressChanged += BatchWorkerProgressChanged;
             batchWorker.RunWorkerCompleted += BatchWorkerCompleted;
+            uploadWorker.WorkerReportsProgress = false;
+            uploadWorker.DoWork += UploadWorkerDoWork;
+            uploadWorker.RunWorkerCompleted += UploadWorkerCompleted;
 
             test.Click += delegate { StartTest(false); };
             browse.Click += delegate { BrowseFolder(); };
+            pickFiles.Click += delegate { PickDatabaseFiles(); };
             refresh.Click += delegate { RefreshAll(); };
             selectAll.Click += delegate { SetAllChecks(true); };
             clearSelection.Click += delegate { SetAllChecks(false); };
             attach.Click += delegate { StartBatch(true); };
             detach.Click += delegate { StartBatch(false); };
+            openLog.Click += delegate { OpenLogFile(); };
+            sendLog.Click += delegate { AskUploadLog(); };
             auth.SelectedIndexChanged += delegate { UpdateAuthVisibility(); };
             guide.Click += delegate {
                 try
@@ -296,7 +310,8 @@ namespace DbMount
                 Dock = DockStyle.Fill, AutoSize = true, WrapContents = true,
                 Padding = new Padding(0, 0, 0, 10), Margin = Padding.Empty
             };
-            toolbar.Controls.AddRange(new Control[] { selectAll, clearSelection, refresh, guide });
+            toolbar.Controls.AddRange(new Control[] { selectAll, clearSelection, refresh,
+                guide, openLog, sendLog });
             workspace.Controls.Add(toolbar, 0, 4);
 
             TableLayoutPanel footer = new TableLayoutPanel {
@@ -367,16 +382,19 @@ namespace DbMount
             connectRow.Controls.Add(connStatus);
 
             TableLayoutPanel folderRow = new TableLayoutPanel {
-                Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
+                Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1,
                 Margin = Padding.Empty, Padding = new Padding(0, 4, 0, 2),
                 BackColor = Color.White
             };
             folderRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             folderRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            folderRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             folderBox.Dock = DockStyle.Fill;
+            pickFiles.Margin = new Padding(8, 0, 0, 0);
             browse.Margin = new Padding(8, 0, 0, 0);
             folderRow.Controls.Add(folderBox, 0, 0);
-            folderRow.Controls.Add(browse, 1, 0);
+            folderRow.Controls.Add(pickFiles, 1, 0);
+            folderRow.Controls.Add(browse, 2, 0);
 
             grid.Controls.Add(serverCaption, 0, 0);
             grid.Controls.Add(serverRow, 1, 0);
@@ -519,6 +537,65 @@ namespace DbMount
             }
         }
 
+        private void PickDatabaseFiles()
+        {
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Title = "Eklenecek veritabanı dosyalarını seçin (MDF)";
+                dialog.Filter = "SQL Server veritabanları (*.mdf)|*.mdf|Tüm dosyalar (*.*)|*.*";
+                dialog.Multiselect = true;
+                dialog.CheckFileExists = true;
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                AddFiles(dialog.FileNames);
+            }
+        }
+
+        private void AddFiles(string[] paths)
+        {
+            int added = 0;
+            foreach (string path in paths)
+            {
+                string full;
+                try { full = Path.GetFullPath(path); }
+                catch { full = path; }
+                bool exists = false;
+                foreach (DatabaseFile item in items)
+                {
+                    if (item.MdfPath.Equals(full, StringComparison.OrdinalIgnoreCase))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (exists) continue;
+                DatabaseFile file = new DatabaseFile(full);
+                try { MdfHeader.Read(file); } catch { }
+                items.Add(file);
+                extraItems.Add(file);
+                list.Items.Add(file.Name);
+                added++;
+            }
+            if (added == 0)
+            {
+                status.Text = "Seçilen dosyalar zaten listede";
+                return;
+            }
+            for (int i = items.Count - added; i < items.Count; i++)
+                list.SetItemChecked(i, true);
+            Log.Info("Dosya secildi: " + added + " adet MDF eklendi (toplam " +
+                items.Count + ")");
+            if (connected)
+            {
+                status.Text = added + " dosya eklendi; durumlar güncelleniyor…";
+                StartTest(true);
+            }
+            else
+            {
+                status.Text = added + " dosya eklendi — durum için sunucuya bağlanın";
+                UpdateSelectionInfo();
+            }
+        }
+
         private void RefreshAll()
         {
             LoadFolder();
@@ -533,6 +610,19 @@ namespace DbMount
 
             items.Clear();
             items.AddRange(SqlOps.ScanFolder(folderBox.Text));
+            foreach (DatabaseFile extra in extraItems)
+            {
+                bool duplicate = false;
+                foreach (DatabaseFile item in items)
+                {
+                    if (item.MdfPath.Equals(extra.MdfPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if (!duplicate) items.Add(extra);
+            }
             list.BeginUpdate();
             list.Items.Clear();
             foreach (DatabaseFile item in items) list.Items.Add(item.Name);
@@ -545,6 +635,81 @@ namespace DbMount
             else if (items.Count == 0)
                 status.Text = "Klasör seçin";
             UpdateSelectionInfo();
+        }
+
+        private void OpenLogFile()
+        {
+            try
+            {
+                string path = Log.LogPath;
+                Log.Info("Hata kaydi kullanici tarafindan acildi: " + path);
+                if (!File.Exists(path))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(path));
+                    File.WriteAllText(path, "", Encoding.UTF8);
+                }
+                System.Diagnostics.Process.Start("notepad.exe", "\"" + path + "\"");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Kayit acilamadi", ex);
+                MessageBox.Show("Hata kaydı açılamadı.\n\n" + ex.Message,
+                    ProductInfo.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void AskUploadLog()
+        {
+            if (busy) return;
+            long size = Log.CurrentSize();
+            DialogResult result = MessageBox.Show(
+                "Hata kaydı (" + DatabaseFile.FormatSize(size) + ") destek sunucusuna " +
+                "gönderilecek.\n\nKayıt; uygulama sürümü, Windows sürümü, sunucu adı, " +
+                "dosya yolları ve işlem özetlerini içerir. Parola içermez.\n\n" +
+                "Gönderilsin mi?", ProductInfo.DisplayName,
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (result != DialogResult.Yes) return;
+            StartUpload();
+        }
+
+        private void StartUpload()
+        {
+            if (busy) return;
+            busy = true;
+            SetBusyState();
+            status.Text = "Hata kaydı gönderiliyor…";
+            Log.Info("Hata kaydi yukleme baslatildi");
+            uploadWorker.RunWorkerAsync();
+        }
+
+        private void UploadWorkerDoWork(object sender, DoWorkEventArgs e)
+        {
+            string payload = Log.BuildSupportPayload();
+            e.Result = SupportUpload.Upload(payload);
+        }
+
+        private void UploadWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+            busy = false;
+            SetBusyState();
+            string result = e.Result as string;
+            if (result != null && result.StartsWith("OK"))
+            {
+                status.Text = "Hata kaydı gönderildi";
+                Log.Info("Hata kaydi sunucuya gonderildi: " + result);
+                MessageBox.Show("Hata kaydı destek sunucusuna gönderildi. Teşekkürler.",
+                    ProductInfo.DisplayName, MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            else
+            {
+                status.Text = "Hata kaydı gönderilemedi";
+                Log.Error("Kayit yukleme sonucu", result ?? "(sonuc yok)");
+                MessageBox.Show(
+                    "Hata kaydı gönderilemedi. İnternet bağlantınızı denetleyin ve " +
+                    "daha sonra yeniden deneyin.\n\nAyrıntı: " + (result ?? "bilinmiyor"),
+                    ProductInfo.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         private void RefreshStates(Dictionary<string, string> attachedMap)
@@ -573,7 +738,9 @@ namespace DbMount
             Cursor = busy ? Cursors.AppStarting : Cursors.Default;
             test.Enabled = !busy;
             browse.Enabled = !busy;
+            pickFiles.Enabled = !busy;
             refresh.Enabled = !busy;
+            sendLog.Enabled = !busy;
             server.Enabled = !busy;
             auth.Enabled = !busy;
             userBox.Enabled = !busy;
@@ -610,12 +777,15 @@ namespace DbMount
                         out result.Edition, out result.Host);
                     result.AttachedMap = SqlOps.QueryAttachedFiles(connection);
                     result.Ok = true;
+                    Log.Info("Baglanti kuruldu: " + serverName + " — SQL Server " +
+                        result.Version + " (" + result.Edition + ") @ " + result.Host);
                 }
             }
             catch (Exception ex)
             {
                 result.Ok = false;
                 result.Message = SqlOps.TranslateSqlError(ex);
+                Log.Error("Baglanti sinamasi basarisiz: " + serverName, ex);
             }
             e.Result = result;
         }
@@ -723,7 +893,11 @@ namespace DbMount
                 }
                 finally { Cursor = previous; }
             }
-            catch { statusOk = false; }
+            catch (Exception ex)
+            {
+                statusOk = false;
+                Log.Error("On denetim baglantisi basarisiz: " + server.Text.Trim(), ex);
+            }
 
             if (!statusOk)
             {
@@ -768,6 +942,8 @@ namespace DbMount
             string password = (string)args[3];
             List<BatchOp> ops = (List<BatchOp>)args[4];
             BatchResult result = new BatchResult();
+            Log.Info("Toplu islem baslatildi: " + (ops.Count > 0 && ops[0].AttachOp
+                ? "ekle" : "cikar") + ", oge sayisi=" + ops.Count + ", sunucu=" + serverName);
             try
             {
                 using (System.Data.SqlClient.SqlConnection probe =
@@ -787,22 +963,29 @@ namespace DbMount
                             op.Ok = true;
                             op.Message = op.AttachOp ? "Eklendi" : "Çıkarıldı";
                             result.Success++;
+                            Log.Info("Islem basarili: " + (op.AttachOp ? "ekle " : "cikar ") +
+                                op.Item.Name + " (" + op.Item.MdfPath + ")");
                         }
                         catch (Exception ex)
                         {
                             op.Ok = false;
                             op.Message = SqlOps.TranslateSqlError(ex);
+                            Log.Error("Islem basarisiz: " + (op.AttachOp ? "ekle " : "cikar ") +
+                                op.Item.Name + " (" + op.Item.MdfPath + ")", ex);
                         }
                         batchWorker.ReportProgress(i + 1, op);
                     }
                     try { result.AttachedMap = SqlOps.QueryAttachedFiles(probe); }
-                    catch { }
+                    catch (Exception ex) { Log.Error("Durum yenileme", ex); }
                     result.ConnectionOk = true;
+                    Log.Info("Toplu islem bitti: basarili=" + result.Success +
+                        ", hatali=" + (ops.Count - result.Success));
                 }
             }
             catch (Exception ex)
             {
                 result.ConnectionError = SqlOps.TranslateSqlError(ex);
+                Log.Error("Toplu islem baglanti hatasi: " + serverName, ex);
             }
             e.Result = result;
         }
@@ -820,6 +1003,8 @@ namespace DbMount
 
         private void BatchWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
+            int total = batchTotal;
+            batchTotal = 0;
             busy = false;
             SetBusyState();
             BatchResult result = e.Result as BatchResult;
@@ -843,10 +1028,10 @@ namespace DbMount
                 railStatus.ForeColor = Success;
                 railStatus.Text = "●  Bağlı: " + server.Text.Trim();
                 RefreshStates(result.AttachedMap);
-                int failed = batchTotal - result.Success;
+                int failed = Math.Max(0, total - result.Success);
                 if (failed == 0)
                 {
-                    status.Text = batchTotal + " işlem tamamlandı";
+                    status.Text = total + " işlem tamamlandı";
                 }
                 else
                 {
@@ -861,9 +1046,24 @@ namespace DbMount
                         summary.AppendLine(items[i].Name + " — " + items[i].LastResult);
                         shown++;
                     }
+                    summary.AppendLine("");
+                    summary.AppendLine("Ayrıntılı hata kaydı bu bilgisayarda:");
+                    summary.AppendLine(Log.LogPath);
+                    bool showUploadPrompt = true;
 #if DEBUG
-                    if (!selftestActive)
+                    showUploadPrompt = !selftestActive;
 #endif
+                    if (showUploadPrompt)
+                    {
+                        summary.AppendLine("");
+                        summary.AppendLine("Hata kaydı, sorunun çözümü için destek " +
+                            "sunucusuna gönderilsin mi?");
+                        DialogResult upload = MessageBox.Show(summary.ToString(),
+                            ProductInfo.DisplayName, MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Warning);
+                        if (upload == DialogResult.Yes) StartUpload();
+                    }
+                    else
                     {
                         MessageBox.Show(summary.ToString(), ProductInfo.DisplayName,
                             MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -873,7 +1073,6 @@ namespace DbMount
                 if (selftestActive) ContinueSelfTest();
 #endif
             }
-            batchTotal = 0;
         }
 
         private void RestoreAndConnect()
@@ -936,12 +1135,28 @@ namespace DbMount
                 SelfTestLog("  - " + item.Name + " (db: " + item.DatabaseName +
                     ", veri dosyasi: " + item.DataFiles.Count +
                     ", log: " + item.LogFiles.Count + ")");
+            string extraFolder = folderBox.Text.TrimEnd('\\') + "_extra";
+            string extraFile = Path.Combine(extraFolder, "SQLdbTestD.mdf");
+            if (File.Exists(extraFile))
+            {
+                AddFiles(new string[] { extraFile });
+                SelfTestLog("Ek dosya eklendi (klasor disi): " + extraFile);
+                SelfTestLog("Liste oge sayisi (ek sonrasi): " + items.Count);
+            }
             if (items.Count == 0)
             {
                 SelfTestLog("HATA: liste bos");
                 Application.Exit();
                 return;
             }
+            int wait = 0;
+            while (busy && wait < 100)
+            {
+                Application.DoEvents();
+                System.Threading.Thread.Sleep(100);
+                wait++;
+            }
+            SelfTestLog("Busy bekleme: " + (wait * 100) + " ms");
             SetAllChecks(true);
             selftestPhase = 1;
             SelfTestLog("Asama 1: Ekle baslatiliyor (" + items.Count + " oge)");

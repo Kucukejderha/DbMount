@@ -1,4 +1,4 @@
-# ASCOS DbMount 1.0
+# ASCOS DbMount 1.1
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 
@@ -11,6 +11,8 @@ uygulamasıdır.
 
 - Veritabanı dosyalarının bulunduğu klasörü seçin; klasördeki tüm `.mdf`
   dosyaları boyutlarıyla listelenir.
+- **Dosya seç…** ile bilgisayarın herhangi bir yerinden MDF dosyaları da
+  listeye eklenebilir; dosyalar bulundukları klasörde yerinde bağlanır.
 - Her dosya için sunucudaki durumu gösterilir: **Bağlı** veya **Bağlı değil**.
 - Dosyaları tek tek işaretleyin veya **Tümünü seç** ile toplu işlem yapın.
 - **Ekle** seçili dosyaları sunucuya bağlar; **Çıkar** seçili bağlı
@@ -22,12 +24,31 @@ uygulamasıdır.
     "Logo/Netsis gibi bir uygulama kullanıyor olabilir" uyarısı gösterilir.
   - Ekleme için: dosyanın başka bir uygulama veya SQL Server örneği
     tarafından kilitli olup olmadığı denetlenir.
-- Dosyalar hiçbir zaman taşınmaz veya silinmez; veritabanları bulundukları
-  klasörde kalır.
+- Dosyalar hiçbir zaman taşınmaz veya silinmez.
 - Veritabanına ait tüm dosyalar (MDF + NDF + LDF) MDF başlığından otomatik
   algılanır; LDF'siz dosyalar için log dosyası yeniden oluşturulur.
 - Çıkarma işleminde etkin bağlantılar `SINGLE_USER WITH ROLLBACK IMMEDIATE`
   ile kapatılır.
+
+## Hata kaydı ve destek
+
+- Tüm işlemler, bağlantı sonuçları ve hatalar ayrıntılı biçimde
+  `%LOCALAPPDATA%\DbMount\DbMount.log` dosyasına yazılır (2 MB'ta
+  `DbMount.previous.log` olarak döner). Parola asla kayda yazılmaz.
+- **Kaydı aç** düğmesi bu günlüğü Not Defteri'nde açar.
+- **Hata kaydı gönder** düğmesi, kullanıcı onayı alındıktan sonra günlüğü
+  destek sunucusuna yükler. İşlem hata ile sonuçlandığında aynı onay sorusu
+  otomatik olarak da sorulur.
+- Gönderilen kayıt; uygulama sürümü, Windows sürümü, sunucu adı, dosya
+  yolları ve işlem özetlerini içerir; parola içermez.
+
+### Destek sunucusu kurulumu
+
+`server/log-upload.php` dosyasını web sunucusuna kopyalayın (örn.
+`rotaniz.com/ascos-araclar/dbmount/log-upload.php`). Uygulamanın gönderdiği
+kayıtlar aynı dizinde `logs/` klasörü altında günlük dosyalara eklenir.
+Uygulamanın kullandığı adres `Common.cs` içindeki `Common.UploadUrl`
+değeridir; sunucu adresinize göre güncelleyip yeniden derleyin.
 
 ## Desteklenen sistemler
 
@@ -40,8 +61,8 @@ uygulamasıdır.
 ## Gereksinimler ve izinler
 
 1. Hedef SQL Server örneğinde **sysadmin** yetkisi gerekir.
-2. SQL Server hizmet hesabının (ör. `NT SERVICE\MSSQLSERVER`) seçtiğiniz
-   klasöre **okuma/yazma NTFS izni** olmalıdır:
+2. SQL Server hizmet hesabının (ör. `NT SERVICE\MSSQLSERVER`) dosyaların
+   bulunduğu klasörlere **okuma/yazma NTFS izni** olmalıdır:
    ```
    icacls "D:\Veritabanlari" /grant "NT Service\MSSQLSERVER:(OI)(CI)F"
    ```
@@ -56,13 +77,14 @@ uygulamasıdır.
    için kullanıcı adı/parola girin. Parola, **Parolayı anımsa** işaretliyse
    Windows DPAPI ile şifrelenip `HKCU\SOFTWARE\ASCOS\DbMount` altında saklanır.
 3. **Bağlantıyı sına** ile bağlantıyı doğrulayın.
-4. **Dosya yolu** satırındaki **Klasör seç…** ile veritabanı dosyalarının
-   bulunduğu klasörü seçin.
+4. **Dosya yolu** satırındaki **Klasör seç…** ile klasörü seçin veya
+   **Dosya seç…** ile tek tek MDF dosyaları ekleyin.
 5. Listeden dosyaları işaretleyin; **Ekle** veya **Çıkar** düğmesini kullanın.
 6. Onay penceresinde işlem listesini ve uyarıları gözden geçirip **Devam et**
    deyin.
 7. İşlemler arka planda sırayla yürütülür; sonuç her satırda ve alt durum
-   çubuğunda görünür. Hata olursa Türkçe açıklamalı özet gösterilir.
+   çubuğunda görünür. Hata olursa Türkçe açıklamalı özet gösterilir ve hata
+   kaydı gönderme seçeneği sunulur.
 
 ## Logo
 
@@ -92,8 +114,8 @@ taşınır.
 
 ## Tanılama
 
-Bağlantı ve işlem hataları doğrudan arayüzde Türkçe açıklamalarıyla gösterilir.
-Parola hiçbir yere yazılmaz.
+Bağlantı ve işlem hataları doğrudan arayüzde Türkçe açıklamalarıyla gösterilir;
+ayrıntılar hata kaydına yazılır. Parola hiçbir yere yazılmaz.
 
 ## Lisans
 
@@ -102,3 +124,4 @@ Copyright (C) 2026 ASCOS DbMount contributors.
 ASCOS DbMount, **GNU Affero General Public License v3.0** (`AGPL-3.0-only`)
 altında yayımlanır. Tam koşullar için [LICENSE](LICENSE) dosyasına bakın.
 Program hiçbir garanti verilmeden sunulur.
+

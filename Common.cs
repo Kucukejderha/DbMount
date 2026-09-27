@@ -11,7 +11,13 @@ namespace DbMount
     {
         internal const string DisplayName = "ASCOS DbMount";
         internal const string ManagementTitle = "ASCOS DbMount Yönetimi";
-        internal const string Version = "1.0.0";
+        internal const string Version = "1.1.0";
+    }
+
+    internal static class Common
+    {
+        internal static string UploadUrl =
+            "https://rotaniz.com/ascos-araclar/dbmount/log-upload.php";
     }
 
     internal static class Settings

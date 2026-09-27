@@ -46,10 +46,26 @@ yeşil <b>● Bağlı</b> durumu görünür.</p>
 <p><b>Dosya yolu</b> satırındaki <b>Klasör seç…</b> düğmesiyle veritabanı dosyalarının
 bulunduğu klasörü seçin. Klasördeki tüm <code>.mdf</code> dosyaları listelenir;
 her satırda durum (Bağlı / Bağlı değil) ve dosya boyutları gösterilir.</p>
-<p class="note">ⓘ Yalnızca seçilen ana klasör taranır; alt klasörlere bakılmaz.</p>
+<p>Klasör taraması dışındaki dosyalar için <b>Dosya seç…</b> düğmesiyle
+bilgisayarın herhangi bir yerinden bir veya daha fazla MDF dosyası seçip
+listeye ekleyebilirsiniz. Bu dosyalar bulundukları klasörde yerinde bağlanır;
+liste seçimleri klasör değişikliğinden sonra da korunur.</p>
+<p class="note">ⓘ Klasör taramasında yalnızca seçilen ana klasöre bakılır; alt klasörlere inilmez.</p>
 </div>
 
-<h2>3. İşlem onayı ve ön denetim</h2>
+<h2>3. Hata kaydı ve destek</h2>
+<div class="card">
+<p>Tüm bağlantı ve işlem sonuçları ile hata ayrıntıları
+<code>%LOCALAPPDATA%\DbMount\DbMount.log</code> dosyasına yazılır.
+<b>Kaydı aç</b> düğmesi bu günlüğü Not Defteri'nde açar.</p>
+<p><b>Hata kaydı gönder</b> düğmesi, onayınızı aldıktan sonra günlüğü destek
+sunucusuna yükler; işlem hata ile sonuçlandığında aynı onay sorusu otomatik
+olarak sorulur. Böylece hata incelenip uygulama düzeltilebilir.</p>
+<p class="note">ⓘ Gönderilen kayıt; uygulama ve Windows sürümü, sunucu adı, dosya yolları ve işlem
+özetlerini içerir. Parola içermez.</p>
+</div>
+
+<h2>4. İşlem onayı ve ön denetim</h2>
 <div class="card">
 <p>Her <b>Ekle</b> veya <b>Çıkar</b> işleminden önce <b>onay penceresi</b> açılır:</p>
 <ul>
@@ -62,7 +78,7 @@ bu veritabanını kullanıyor olabilir; işlem bağlantıları kapatacak."</b></
 <p>Listeyi gözden geçirip <b>Devam et</b> demeden hiçbir işlem başlamaz.</p>
 </div>
 
-<h2>4. Ekleme (Mount/Attach)</h2>
+<h2>5. Ekleme (Mount/Attach)</h2>
 <div class="card">
 <p><span class="step">1.</span> Listeden eklenecek veritabanlarını işaretleyin veya
 <b>Tümünü seç</b> düğmesini kullanın.</p>
@@ -75,7 +91,7 @@ bu veritabanını kullanıyor olabilir; işlem bağlantıları kapatacak."</b></
 </ul>
 </div>
 
-<h2>5. Çıkarma (Unmount/Detach)</h2>
+<h2>6. Çıkarma (Unmount/Detach)</h2>
 <div class="card">
 <p><span class="step">1.</span> Çıkarılacak veritabanlarını işaretleyin (yalnızca <b>Bağlı</b> olanlar çıkarılabilir).</p>
 <p><span class="step">2.</span> <b>Çıkar</b> düğmesine basın; onay penceresindeki uyarıları gözden geçirip <b>Devam et</b> deyin.</p>
@@ -97,6 +113,6 @@ ve veritabanı sunucudan ayrılır. Dosyalar klasörde kalır; istenirse taşın
 
 <div class="warn">ⓘ Ekleme ve çıkarma işlemi için hedef sunucuda <b>sysadmin</b> yetkisi gerekir.</div>
 
-<p style="color:#617187; font-size:13px;">ASCOS DbMount 1.0.0 — <a href="https://rotaniz.com/ascos-araclar/">rotaniz.com/ascos-araclar</a> · AGPL-3.0</p>
+<p style="color:#617187; font-size:13px;">ASCOS DbMount 1.1.0 — <a href="https://rotaniz.com/ascos-araclar/">rotaniz.com/ascos-araclar</a> · AGPL-3.0</p>
 </body>
 </html>
