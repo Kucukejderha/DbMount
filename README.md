@@ -1,4 +1,4 @@
-# ASCOS DbMount 1.2
+# ASCOS DbMount 1.2.1
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 
@@ -51,14 +51,24 @@ yarayan, ASCOS kurumsal temasına sahip bir Windows masaüstü uygulamasıdır.
   otomatik olarak da sorulur.
 - Gönderilen kayıt; uygulama sürümü, Windows sürümü, sunucu adı, dosya
   yolları ve işlem özetlerini içerir; parola içermez.
+- Sunucuya ulaşılamazsa veya destek uç noktası kurulu değilse (HTTP 404)
+  özel açıklama gösterilir ve **Kaydı aç / Panoya kopyala** seçenekleriyle
+  kayıt manuel olarak (e-posta/WhatsApp) ulaştırılabilir.
 
 ### Destek sunucusu kurulumu
 
-`server/log-upload.php` dosyasını web sunucusuna kopyalayın (örn.
-`rotaniz.com/ascos-araclar/dbmount/log-upload.php`). Uygulamanın gönderdiği
-kayıtlar aynı dizinde `logs/` klasörü altında günlük dosyalara eklenir.
+1. `server/log-upload.php` dosyasını web sunucusuna kopyalayın. rotaniz.com
+   cPanel hostinginde hedef yol:
+   `public_html/ascos-araclar/dbmount/log-upload.php`
+   (cPanel → Dosya Yöneticisi veya FTP ile yükleyin).
+2. Aynı dizinde `logs` klasörü otomatik oluşturulur; gelen kayıtlar günlük
+   dosyalara eklenir (`logs/ASCOS-DbMount-2026-09-28-1_2_1.log` gibi).
+3. Kurulumu doğrulamak için uygulamada **Hata kaydı gönder** düğmesini
+   kullanın; "Hata kaydı gönderildi" mesajı görünmelidir.
+
 Uygulamanın kullandığı adres `Common.cs` içindeki `Common.UploadUrl`
-değeridir; sunucu adresinize göre güncelleyip yeniden derleyin.
+değeridir; farklı bir adres kullanacaksanız bu değeri güncelleyip yeniden
+derleyin.
 
 ## Desteklenen sistemler
 

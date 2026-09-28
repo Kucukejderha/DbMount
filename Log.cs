@@ -163,6 +163,18 @@ namespace DbMount
                     return "HTTP " + (int)response.StatusCode + " " + response.StatusDescription;
                 }
             }
+            catch (WebException ex)
+            {
+                Log.Error("Kayit yukleme", ex);
+                HttpWebResponse response = ex.Response as HttpWebResponse;
+                if (response != null)
+                {
+                    if ((int)response.StatusCode == 404)
+                        return "404";
+                    return "HTTP " + (int)response.StatusCode + " " + response.StatusDescription;
+                }
+                return "AG: " + ex.Message;
+            }
             catch (Exception ex)
             {
                 Log.Error("Kayit yukleme", ex);

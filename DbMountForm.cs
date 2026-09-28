@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Text;
 using System.Windows.Forms;
@@ -46,6 +47,7 @@ namespace DbMount
         private readonly Label status = new Label();
         private readonly Label railStatus = new Label();
         private readonly CheckedListBox list = new CheckedListBox();
+        private readonly ThinProgressBar progress = new ThinProgressBar();
 
         private readonly List<DatabaseFile> items = new List<DatabaseFile>();
         private readonly List<DatabaseFile> extraItems = new List<DatabaseFile>();
@@ -335,10 +337,21 @@ namespace DbMount
             status.ForeColor = Muted;
             status.AutoSize = true;
             status.Anchor = AnchorStyles.Left;
+            TableLayoutPanel statusArea = new TableLayoutPanel {
+                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2,
+                Margin = Padding.Empty, Padding = new Padding(0, 0, 10, 2),
+                BackColor = Canvas
+            };
+            statusArea.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            statusArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 10));
+            statusArea.Controls.Add(status, 0, 0);
+            progress.Dock = DockStyle.Fill;
+            progress.Height = 6;
+            statusArea.Controls.Add(progress, 0, 1);
             detach.Margin = new Padding(8, 0, 0, 0);
             restore.Margin = new Padding(8, 0, 0, 0);
             attach.Margin = new Padding(8, 0, 0, 0);
-            footer.Controls.Add(status, 0, 0);
+            footer.Controls.Add(statusArea, 0, 0);
             footer.Controls.Add(detach, 1, 0);
             footer.Controls.Add(restore, 2, 0);
             footer.Controls.Add(attach, 3, 0);
@@ -747,6 +760,7 @@ namespace DbMount
             if (busy) return;
             busy = true;
             SetBusyState();
+            progress.Indeterminate = true;
             status.Text = "Hata kaydı gönderiliyor…";
             Log.Info("Hata kaydi yukleme baslatildi");
             uploadWorker.RunWorkerAsync();
@@ -762,6 +776,8 @@ namespace DbMount
         {
             busy = false;
             SetBusyState();
+            progress.Indeterminate = false;
+            progress.Value = 0;
             string result = e.Result as string;
             if (result != null && result.StartsWith("OK"))
             {
@@ -775,10 +791,44 @@ namespace DbMount
             {
                 status.Text = "Hata kaydı gönderilemedi";
                 Log.Error("Kayit yukleme sonucu", result ?? "(sonuc yok)");
-                MessageBox.Show(
-                    "Hata kaydı gönderilemedi. İnternet bağlantınızı denetleyin ve " +
-                    "daha sonra yeniden deneyin.\n\nAyrıntı: " + (result ?? "bilinmiyor"),
-                    ProductInfo.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                string detail;
+                if (result == "404")
+                    detail = "Destek sunucusu hazır değil (HTTP 404). Sistem yöneticisinin " +
+                        "log-upload.php dosyasını sunucuya kurması gerekiyor.";
+                else if (result != null && result.StartsWith("HTTP"))
+                    detail = "Destek sunucusu hata döndürdü (" + result + ").";
+                else if (result != null && result.StartsWith("AG:"))
+                    detail = "Destek sunucusuna ulaşılamadı. İnternet bağlantınızı denetleyin.";
+                else
+                    detail = result ?? "bilinmiyor";
+
+                DialogResult choice = MessageBox.Show(
+                    "Hata kaydı gönderilemedi.\n\n" + detail + "\n\n" +
+                    "Hata kaydı bu bilgisayarda:\n" + Log.LogPath + "\n\n" +
+                    "Kaydı açmak ister misiniz? (Panoya da kopyalayabilirsiniz)",
+                    ProductInfo.DisplayName, MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Warning);
+                if (choice == DialogResult.Yes)
+                {
+                    OpenLogFile();
+                }
+                else if (choice == DialogResult.Cancel)
+                {
+                    try
+                    {
+                        Clipboard.SetText(Log.BuildSupportPayload());
+                        status.Text = "Hata kaydı panoya kopyalandı";
+                        Log.Info("Hata kaydi panoya kopyalandi");
+                        MessageBox.Show("Hata kaydı panoya kopyalandı. İstediğiniz " +
+                            "kanaldan (e-posta/WhatsApp) destek ekibine yapıştırabilirsiniz.",
+                            ProductInfo.DisplayName, MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error("Panoya kopyalama", ex);
+                    }
+                }
             }
         }
 
@@ -833,6 +883,7 @@ namespace DbMount
             if (busy) return;
             busy = true;
             SetBusyState();
+            progress.Indeterminate = true;
             connStatus.ForeColor = Muted;
             connStatus.Text = "●  Bağlanılıyor…";
             testWorker.RunWorkerAsync(new object[] {
@@ -891,6 +942,8 @@ namespace DbMount
         {
             busy = false;
             SetBusyState();
+            progress.Indeterminate = false;
+            progress.Value = 0;
             TestResult result = e.Result as TestResult;
             if (result == null) return;
             connected = result.Ok;
@@ -942,6 +995,7 @@ namespace DbMount
                     : "Çıkarılacak seçili öğe yok (yalnızca bağlı olanlar çıkarılabilir)";
                 return;
             }
+            progress.Indeterminate = true;
             string password = passBox.Text;
             if (auth.SelectedIndex == 1 && String.IsNullOrEmpty(password))
             {
@@ -1030,6 +1084,8 @@ namespace DbMount
             batchTotal = ops.Count;
             busy = true;
             SetBusyState();
+            progress.Indeterminate = false;
+            progress.Value = 0;
             status.Text = "İşleniyor 0/" + ops.Count + "…";
             batchWorker.RunWorkerAsync(new object[] {
                 server.Text.Trim(), auth.SelectedIndex == 1, userBox.Text, password, ops });
@@ -1054,6 +1110,7 @@ namespace DbMount
                 status.Text = "Geri yüklenecek seçili yedek yok (Yedek seç… ile ekleyin)";
                 return;
             }
+            progress.Indeterminate = true;
             string targetFolder = null;
 #if DEBUG
             targetFolder = selftestActive ? folderBox.Text : null;
@@ -1184,6 +1241,8 @@ namespace DbMount
             batchTotal = ops.Count;
             busy = true;
             SetBusyState();
+            progress.Indeterminate = false;
+            progress.Value = 0;
             status.Text = "İşleniyor 0/" + ops.Count + "…";
             batchWorker.RunWorkerAsync(new object[] {
                 server.Text.Trim(), auth.SelectedIndex == 1, userBox.Text, password, ops });
@@ -1282,9 +1341,16 @@ namespace DbMount
             if (op == null) return;
             op.Item.LastResult = op.Message;
             op.Item.LastOk = op.Ok;
+            progress.Value = batchTotal > 0
+                ? (int)Math.Round(e.ProgressPercentage * 100.0 / batchTotal) : 0;
             status.Text = "İşleniyor " + e.ProgressPercentage + "/" + batchTotal +
                 ": " + op.Item.Name + "…";
             list.Invalidate();
+#if DEBUG
+            if (selftestActive)
+                SelfTestLog("Ilerleme: %" + progress.Value + " (" +
+                    e.ProgressPercentage + "/" + batchTotal + ")");
+#endif
         }
 
         private void BatchWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
@@ -1293,6 +1359,8 @@ namespace DbMount
             batchTotal = 0;
             busy = false;
             SetBusyState();
+            progress.Indeterminate = false;
+            progress.Value = 0;
             BatchResult result = e.Result as BatchResult;
             if (result == null) return;
             if (!result.ConnectionOk)
@@ -1600,6 +1668,110 @@ namespace DbMount
             if (kind == OpKind.Attach) return "ekle";
             if (kind == OpKind.Detach) return "cikar";
             return "geri yukle";
+        }
+
+        private sealed class ThinProgressBar : Control
+        {
+            private static readonly Color TrackColor = Color.FromArgb(228, 234, 242);
+            private static readonly Color FillColor = Color.FromArgb(43, 111, 184);
+            private static readonly Color MarqueeColor = Color.FromArgb(133, 190, 244);
+            private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
+            private int value;
+            private bool indeterminate;
+            private int marqueeOffset;
+
+            internal ThinProgressBar()
+            {
+                SetStyle(ControlStyles.OptimizedDoubleBuffer |
+                    ControlStyles.AllPaintingInWmPaint |
+                    ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+                Height = 6;
+                timer.Interval = 30;
+                timer.Tick += delegate
+                {
+                    marqueeOffset = (marqueeOffset + 4) % 160;
+                    Invalidate();
+                };
+            }
+
+            internal int Value
+            {
+                get { return value; }
+                set
+                {
+                    int v = Math.Max(0, Math.Min(100, value));
+                    if (v != this.value)
+                    {
+                        this.value = v;
+                        Invalidate();
+                    }
+                }
+            }
+
+            internal bool Indeterminate
+            {
+                get { return indeterminate; }
+                set
+                {
+                    if (indeterminate == value) return;
+                    indeterminate = value;
+                    if (value) timer.Start();
+                    else { timer.Stop(); marqueeOffset = 0; }
+                    Invalidate();
+                }
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                base.OnPaint(e);
+                Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
+                int radius = Math.Max(1, (Height - 1) / 2);
+                using (GraphicsPath track = RoundedRect(bounds, radius))
+                using (Brush trackBrush = new SolidBrush(TrackColor))
+                    e.Graphics.FillPath(trackBrush, track);
+                if (indeterminate)
+                {
+                    int w = Math.Max(28, (Width - 1) / 4);
+                    int x = (marqueeOffset * Math.Max(1, Width + w)) / 160 - w;
+                    Rectangle segment = new Rectangle(x, 0, w, Height - 1);
+                    if (segment.Right > 0 && segment.Left < Width)
+                    {
+                        using (GraphicsPath fill = RoundedRect(segment, radius))
+                        using (Brush fillBrush = new SolidBrush(MarqueeColor))
+                            e.Graphics.FillPath(fillBrush, fill);
+                    }
+                }
+                else if (value > 0)
+                {
+                    int w = (Width - 1) * value / 100;
+                    if (w > 0)
+                    {
+                        Rectangle segment = new Rectangle(0, 0, w, Height - 1);
+                        using (GraphicsPath fill = RoundedRect(segment, radius))
+                        using (Brush fillBrush = new SolidBrush(FillColor))
+                            e.Graphics.FillPath(fillBrush, fill);
+                    }
+                }
+            }
+
+            private static GraphicsPath RoundedRect(Rectangle rect, int radius)
+            {
+                GraphicsPath path = new GraphicsPath();
+                int d = radius * 2;
+                if (rect.Width <= 0 || rect.Height <= 0) return path;
+                path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+                path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+                path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+                path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+                path.CloseFigure();
+                return path;
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing) timer.Dispose();
+                base.Dispose(disposing);
+            }
         }
 
         private sealed class PasswordForm : Form
