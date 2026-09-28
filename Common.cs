@@ -11,7 +11,7 @@ namespace DbMount
     {
         internal const string DisplayName = "ASCOS DbMount";
         internal const string ManagementTitle = "ASCOS DbMount Yönetimi";
-        internal const string Version = "1.1.0";
+        internal const string Version = "1.2.0";
     }
 
     internal static class Common

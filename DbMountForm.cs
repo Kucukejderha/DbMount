@@ -10,6 +10,8 @@ using System.Windows.Forms;
 
 namespace DbMount
 {
+    internal enum OpKind { Attach, Detach, Restore }
+
     internal sealed class DbMountForm : Form
     {
         private static readonly Color Navy = Color.FromArgb(25, 48, 78);
@@ -30,11 +32,13 @@ namespace DbMount
         private readonly Button test = new Button();
         private readonly Button browse = new Button();
         private readonly Button pickFiles = new Button();
+        private readonly Button pickBackup = new Button();
         private readonly Button refresh = new Button();
         private readonly Button selectAll = new Button();
         private readonly Button clearSelection = new Button();
         private readonly Button attach = new Button();
         private readonly Button detach = new Button();
+        private readonly Button restore = new Button();
         private readonly Button guide = new Button();
         private readonly Button openLog = new Button();
         private readonly Button sendLog = new Button();
@@ -51,6 +55,7 @@ namespace DbMount
         private bool busy;
         private bool connected;
         private int batchTotal;
+        private string lastRestoreFolder;
 #if DEBUG
         private bool selftestActive;
         private bool suppressConfirm;
@@ -72,6 +77,7 @@ namespace DbMount
             ConfigureButton(test, "Bağlantıyı sına", false);
             ConfigureButton(browse, "Klasör seç…", false);
             ConfigureButton(pickFiles, "Dosya seç…", false);
+            ConfigureButton(pickBackup, "Yedek seç…", false);
             ConfigureButton(refresh, "Yenile", false);
             ConfigureButton(selectAll, "Tümünü seç", false);
             ConfigureButton(clearSelection, "Seçimi temizle", false);
@@ -79,6 +85,7 @@ namespace DbMount
             ConfigureButton(openLog, "Kaydı aç", false);
             ConfigureButton(sendLog, "Hata kaydı gönder", false);
             ConfigureButton(detach, "Çıkar", false);
+            ConfigureButton(restore, "Geri yükle", false);
             ConfigureButton(attach, "Ekle", true);
 
             server.DropDownStyle = ComboBoxStyle.DropDown;
@@ -137,11 +144,13 @@ namespace DbMount
             test.Click += delegate { StartTest(false); };
             browse.Click += delegate { BrowseFolder(); };
             pickFiles.Click += delegate { PickDatabaseFiles(); };
+            pickBackup.Click += delegate { PickBackupFiles(); };
             refresh.Click += delegate { RefreshAll(); };
             selectAll.Click += delegate { SetAllChecks(true); };
             clearSelection.Click += delegate { SetAllChecks(false); };
-            attach.Click += delegate { StartBatch(true); };
-            detach.Click += delegate { StartBatch(false); };
+            attach.Click += delegate { StartBatch(OpKind.Attach); };
+            detach.Click += delegate { StartBatch(OpKind.Detach); };
+            restore.Click += delegate { StartRestore(); };
             openLog.Click += delegate { OpenLogFile(); };
             sendLog.Click += delegate { AskUploadLog(); };
             auth.SelectedIndexChanged += delegate { UpdateAuthVisibility(); };
@@ -315,10 +324,11 @@ namespace DbMount
             workspace.Controls.Add(toolbar, 0, 4);
 
             TableLayoutPanel footer = new TableLayoutPanel {
-                Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1,
+                Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1,
                 Margin = Padding.Empty, Padding = new Padding(0, 10, 0, 0)
             };
             footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             status.Text = "Klasör seçin";
@@ -326,10 +336,12 @@ namespace DbMount
             status.AutoSize = true;
             status.Anchor = AnchorStyles.Left;
             detach.Margin = new Padding(8, 0, 0, 0);
+            restore.Margin = new Padding(8, 0, 0, 0);
             attach.Margin = new Padding(8, 0, 0, 0);
             footer.Controls.Add(status, 0, 0);
             footer.Controls.Add(detach, 1, 0);
-            footer.Controls.Add(attach, 2, 0);
+            footer.Controls.Add(restore, 2, 0);
+            footer.Controls.Add(attach, 3, 0);
             workspace.Controls.Add(footer, 0, 5);
             return workspace;
         }
@@ -382,19 +394,22 @@ namespace DbMount
             connectRow.Controls.Add(connStatus);
 
             TableLayoutPanel folderRow = new TableLayoutPanel {
-                Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1,
+                Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1,
                 Margin = Padding.Empty, Padding = new Padding(0, 4, 0, 2),
                 BackColor = Color.White
             };
             folderRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             folderRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             folderRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            folderRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             folderBox.Dock = DockStyle.Fill;
             pickFiles.Margin = new Padding(8, 0, 0, 0);
+            pickBackup.Margin = new Padding(8, 0, 0, 0);
             browse.Margin = new Padding(8, 0, 0, 0);
             folderRow.Controls.Add(folderBox, 0, 0);
             folderRow.Controls.Add(pickFiles, 1, 0);
-            folderRow.Controls.Add(browse, 2, 0);
+            folderRow.Controls.Add(pickBackup, 2, 0);
+            folderRow.Controls.Add(browse, 3, 0);
 
             grid.Controls.Add(serverCaption, 0, 0);
             grid.Controls.Add(serverRow, 1, 0);
@@ -455,11 +470,31 @@ namespace DbMount
                 TextRenderer.DrawText(e.Graphics, item.Name, nameFont, nameBounds, Ink,
                     TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
-            string stateText = item.Attached
-                ? (String.IsNullOrEmpty(item.AttachedName)
-                    ? "● Bağlı" : "● Bağlı: " + item.AttachedName)
-                : "● Bağlı değil";
-            Color stateColor = item.Attached ? Success : Muted;
+            string stateText;
+            Color stateColor;
+            if (item.Kind == ItemKind.Bak)
+            {
+                if (!String.IsNullOrEmpty(item.BackupDatabaseName))
+                {
+                    stateText = item.Attached
+                        ? "● Aynı adlı DB bağlı: " + item.BackupDatabaseName
+                        : "● Yedek: " + item.BackupDatabaseName;
+                    stateColor = item.Attached ? Danger : Muted;
+                }
+                else
+                {
+                    stateText = "● Yedek dosyası";
+                    stateColor = Muted;
+                }
+            }
+            else
+            {
+                stateText = item.Attached
+                    ? (String.IsNullOrEmpty(item.AttachedName)
+                        ? "● Bağlı" : "● Bağlı: " + item.AttachedName)
+                    : "● Bağlı değil";
+                stateColor = item.Attached ? Success : Muted;
+            }
 
             int x = e.Bounds.Left + 40;
             int y = e.Bounds.Top + 29;
@@ -493,19 +528,32 @@ namespace DbMount
 
         private void UpdateSelectionInfo()
         {
-            int attachedCount = 0, detachedCount = 0, total = 0;
+            int attachCount = 0, detachCount = 0, restoreCount = 0, total = 0;
             for (int i = 0; i < items.Count; i++)
             {
                 if (!list.GetItemChecked(i)) continue;
                 total++;
-                if (items[i].Attached) attachedCount++;
-                else detachedCount++;
+                DatabaseFile item = items[i];
+                if (item.Kind == ItemKind.Bak) restoreCount++;
+                else if (item.Attached) detachCount++;
+                else attachCount++;
             }
-            if (total == 0) status.Text = "Seçili öğe yok";
-            else status.Text = "Seçili: " + total + " — eklenecek: " + detachedCount +
-                ", çıkarılacak: " + attachedCount;
-            attach.Enabled = !busy && detachedCount > 0;
-            detach.Enabled = !busy && attachedCount > 0;
+            if (total == 0)
+            {
+                status.Text = "Seçili öğe yok";
+            }
+            else
+            {
+                List<string> parts = new List<string>();
+                if (attachCount > 0) parts.Add("eklenecek: " + attachCount);
+                if (detachCount > 0) parts.Add("çıkarılacak: " + detachCount);
+                if (restoreCount > 0) parts.Add("geri yüklenecek: " + restoreCount);
+                status.Text = "Seçili: " + total +
+                    (parts.Count > 0 ? " — " + String.Join(", ", parts.ToArray()) : "");
+            }
+            attach.Enabled = !busy && attachCount > 0;
+            detach.Enabled = !busy && detachCount > 0;
+            restore.Enabled = !busy && restoreCount > 0;
         }
 
         private void SetAllChecks(bool value)
@@ -546,11 +594,24 @@ namespace DbMount
                 dialog.Multiselect = true;
                 dialog.CheckFileExists = true;
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
-                AddFiles(dialog.FileNames);
+                AddFiles(dialog.FileNames, ItemKind.Mdf);
             }
         }
 
-        private void AddFiles(string[] paths)
+        private void PickBackupFiles()
+        {
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Title = "Geri yüklenecek yedek dosyalarını seçin (BAK)";
+                dialog.Filter = "SQL Server yedekleri (*.bak)|*.bak|Tüm dosyalar (*.*)|*.*";
+                dialog.Multiselect = true;
+                dialog.CheckFileExists = true;
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                AddFiles(dialog.FileNames, ItemKind.Bak);
+            }
+        }
+
+        private void AddFiles(string[] paths, ItemKind kind)
         {
             int added = 0;
             foreach (string path in paths)
@@ -569,7 +630,15 @@ namespace DbMount
                 }
                 if (exists) continue;
                 DatabaseFile file = new DatabaseFile(full);
-                try { MdfHeader.Read(file); } catch { }
+                file.Kind = kind;
+                if (kind == ItemKind.Mdf)
+                {
+                    try { MdfHeader.Read(file); } catch { }
+                }
+                else
+                {
+                    file.DatabaseName = file.Name;
+                }
                 items.Add(file);
                 extraItems.Add(file);
                 list.Items.Add(file.Name);
@@ -582,7 +651,8 @@ namespace DbMount
             }
             for (int i = items.Count - added; i < items.Count; i++)
                 list.SetItemChecked(i, true);
-            Log.Info("Dosya secildi: " + added + " adet MDF eklendi (toplam " +
+            Log.Info("Dosya secildi: " + added + " adet " +
+                (kind == ItemKind.Bak ? "BAK" : "MDF") + " eklendi (toplam " +
                 items.Count + ")");
             if (connected)
             {
@@ -712,11 +782,20 @@ namespace DbMount
             }
         }
 
-        private void RefreshStates(Dictionary<string, string> attachedMap)
+        private void RefreshStates(Dictionary<string, string> attachedMap,
+            HashSet<string> databaseNames)
         {
-            if (attachedMap == null) return;
             foreach (DatabaseFile item in items)
             {
+                if (item.Kind == ItemKind.Bak)
+                {
+                    if (databaseNames != null && !String.IsNullOrEmpty(item.BackupDatabaseName))
+                        item.Attached = databaseNames.Contains(item.BackupDatabaseName);
+                    else if (databaseNames != null)
+                        item.Attached = false;
+                    continue;
+                }
+                if (attachedMap == null) continue;
                 string normalized = SqlOps.NormalizePath(item.MdfPath);
                 if (attachedMap.ContainsKey(normalized))
                 {
@@ -739,6 +818,7 @@ namespace DbMount
             test.Enabled = !busy;
             browse.Enabled = !busy;
             pickFiles.Enabled = !busy;
+            pickBackup.Enabled = !busy;
             refresh.Enabled = !busy;
             sendLog.Enabled = !busy;
             server.Enabled = !busy;
@@ -776,6 +856,23 @@ namespace DbMount
                     SqlOps.QueryServerInfo(connection, out result.Version,
                         out result.Edition, out result.Host);
                     result.AttachedMap = SqlOps.QueryAttachedFiles(connection);
+                    result.DatabaseNames = SqlOps.QueryDatabaseNames(connection);
+                    foreach (DatabaseFile item in items)
+                    {
+                        if (item.Kind != ItemKind.Bak) continue;
+                        try
+                        {
+                            BackupHeader header = SqlOps.QueryBackupHeader(
+                                connection, item.MdfPath);
+                            item.BackupDatabaseName = header.DatabaseName;
+                            item.BackupType = header.Type;
+                            item.BackupDate = header.BackupDate;
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error("Yedek basligi okunamadi: " + item.MdfPath, ex);
+                        }
+                    }
                     result.Ok = true;
                     Log.Info("Baglanti kuruldu: " + serverName + " — SQL Server " +
                         result.Version + " (" + result.Edition + ") @ " + result.Host);
@@ -805,7 +902,7 @@ namespace DbMount
                 railStatus.ForeColor = Success;
                 railStatus.Text = "●  Bağlı: " + server.Text.Trim();
                 SaveSettings();
-                RefreshStates(result.AttachedMap);
+                RefreshStates(result.AttachedMap, result.DatabaseNames);
                 if (!result.Silent)
                     MessageBox.Show("Bağlantı kuruldu.\n\n" + connStatus.Text,
                         ProductInfo.DisplayName, MessageBoxButtons.OK,
@@ -823,7 +920,7 @@ namespace DbMount
             }
         }
 
-        private void StartBatch(bool attachOp)
+        private void StartBatch(OpKind kind)
         {
             if (busy) return;
             List<BatchOp> ops = new List<BatchOp>();
@@ -831,16 +928,16 @@ namespace DbMount
             {
                 if (!list.GetItemChecked(i)) continue;
                 DatabaseFile item = items[i];
-                if (attachOp && item.Attached) continue;
-                if (!attachOp && !item.Attached) continue;
+                if (kind == OpKind.Attach && (item.Kind != ItemKind.Mdf || item.Attached)) continue;
+                if (kind == OpKind.Detach && (item.Kind != ItemKind.Mdf || !item.Attached)) continue;
                 BatchOp op = new BatchOp();
                 op.Item = item;
-                op.AttachOp = attachOp;
+                op.Kind = kind;
                 ops.Add(op);
             }
             if (ops.Count == 0)
             {
-                status.Text = attachOp
+                status.Text = kind == OpKind.Attach
                     ? "Eklenecek seçili öğe yok (zaten bağlı olanlar atlanır)"
                     : "Çıkarılacak seçili öğe yok (yalnızca bağlı olanlar çıkarılabilir)";
                 return;
@@ -872,13 +969,14 @@ namespace DbMount
                         {
                             ConfirmForm.ConfirmItem confirmItem = new ConfirmForm.ConfirmItem();
                             confirmItem.File = op.Item;
-                            confirmItem.AttachOp = op.AttachOp;
+                            confirmItem.AttachOp = op.Kind == OpKind.Attach;
+                            confirmItem.RestoreOp = op.Kind == OpKind.Restore;
                             confirmItem.StatusChecked = true;
-                            if (op.AttachOp)
+                            if (op.Kind == OpKind.Attach)
                             {
                                 confirmItem.FileLocked = SqlOps.AnyFileLocked(op.Item);
                             }
-                            else
+                            else if (op.Kind == OpKind.Detach)
                             {
                                 try
                                 {
@@ -906,7 +1004,8 @@ namespace DbMount
                 {
                     ConfirmForm.ConfirmItem confirmItem = new ConfirmForm.ConfirmItem();
                     confirmItem.File = op.Item;
-                    confirmItem.AttachOp = op.AttachOp;
+                    confirmItem.AttachOp = op.Kind == OpKind.Attach;
+                    confirmItem.RestoreOp = op.Kind == OpKind.Restore;
                     confirmItem.StatusChecked = false;
                     confirmItems.Add(confirmItem);
                 }
@@ -920,11 +1019,168 @@ namespace DbMount
 #endif
             if (showDialog)
             {
-                using (ConfirmForm dialog = new ConfirmForm(confirmItems, attachOp, statusOk))
+                ConfirmForm.OperationMode mode = ConfirmForm.OperationMode.Attach;
+                if (kind == OpKind.Detach) mode = ConfirmForm.OperationMode.Detach;
+                if (kind == OpKind.Restore) mode = ConfirmForm.OperationMode.Restore;
+                using (ConfirmForm dialog = new ConfirmForm(confirmItems, mode, statusOk))
                 {
                     if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 }
             }
+            batchTotal = ops.Count;
+            busy = true;
+            SetBusyState();
+            status.Text = "İşleniyor 0/" + ops.Count + "…";
+            batchWorker.RunWorkerAsync(new object[] {
+                server.Text.Trim(), auth.SelectedIndex == 1, userBox.Text, password, ops });
+        }
+
+        private void StartRestore()
+        {
+            if (busy) return;
+            List<BatchOp> ops = new List<BatchOp>();
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (!list.GetItemChecked(i)) continue;
+                DatabaseFile item = items[i];
+                if (item.Kind != ItemKind.Bak) continue;
+                BatchOp op = new BatchOp();
+                op.Item = item;
+                op.Kind = OpKind.Restore;
+                ops.Add(op);
+            }
+            if (ops.Count == 0)
+            {
+                status.Text = "Geri yüklenecek seçili yedek yok (Yedek seç… ile ekleyin)";
+                return;
+            }
+            string targetFolder = null;
+#if DEBUG
+            targetFolder = selftestActive ? folderBox.Text : null;
+#endif
+            if (String.IsNullOrEmpty(targetFolder))
+            {
+                using (FolderBrowserDialog dialog = new FolderBrowserDialog())
+                {
+                    dialog.Description = "Geri yüklenen dosyaların konacağı klasörü seçin";
+                    if (!String.IsNullOrEmpty(folderBox.Text))
+                        dialog.SelectedPath = folderBox.Text;
+                    if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                    targetFolder = dialog.SelectedPath;
+                }
+            }
+            lastRestoreFolder = targetFolder;
+
+            string password = passBox.Text;
+            if (auth.SelectedIndex == 1 && String.IsNullOrEmpty(password))
+            {
+                using (PasswordForm prompt = new PasswordForm(userBox.Text))
+                {
+                    if (prompt.ShowDialog(this) != DialogResult.OK) return;
+                    password = prompt.Password;
+                }
+                passBox.Text = password;
+            }
+
+            bool statusOk = true;
+            List<ConfirmForm.ConfirmItem> confirmItems = new List<ConfirmForm.ConfirmItem>();
+            try
+            {
+                Cursor previous = Cursor;
+                Cursor = Cursors.WaitCursor;
+                try
+                {
+                    using (System.Data.SqlClient.SqlConnection connection =
+                        SqlOps.OpenConnection(server.Text.Trim(), auth.SelectedIndex != 1,
+                            userBox.Text, password, 5))
+                    {
+                        HashSet<string> databaseNames = SqlOps.QueryDatabaseNames(connection);
+                        foreach (BatchOp op in ops)
+                        {
+                            ConfirmForm.ConfirmItem confirmItem = new ConfirmForm.ConfirmItem();
+                            confirmItem.File = op.Item;
+                            confirmItem.AttachOp = false;
+                            confirmItem.RestoreOp = true;
+                            confirmItem.RestoreTargetFolder = targetFolder;
+                            confirmItem.StatusChecked = true;
+                            try
+                            {
+                                BackupHeader header = SqlOps.QueryBackupHeader(
+                                    connection, op.Item.MdfPath);
+                                confirmItem.RestoreDbName = header.DatabaseName;
+                                confirmItem.RestoreReplace =
+                                    databaseNames.Contains(header.DatabaseName);
+                                confirmItem.RestoreInvalid =
+                                    header.Type != 1 && header.Type != 5;
+                                confirmItem.RestoreType = header.Type;
+                                if (!confirmItem.RestoreInvalid)
+                                {
+                                    try
+                                    {
+                                        foreach (BackupFileEntry entry in
+                                            SqlOps.QueryBackupFileList(connection, op.Item.MdfPath))
+                                        {
+                                            string fileName = Path.GetFileName(
+                                                entry.PhysicalName.Trim());
+                                            if (!String.IsNullOrEmpty(fileName) &&
+                                                File.Exists(Path.Combine(targetFolder, fileName)))
+                                            {
+                                                confirmItem.RestoreTargetExists = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    catch { }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                confirmItem.StatusChecked = false;
+                                Log.Error("Yedek basligi okunamadi: " + op.Item.MdfPath, ex);
+                            }
+                            confirmItem.FileLocked = SqlOps.AnyFileLocked(op.Item.MdfPath);
+                            confirmItems.Add(confirmItem);
+                        }
+                    }
+                }
+                finally { Cursor = previous; }
+            }
+            catch (Exception ex)
+            {
+                statusOk = false;
+                Log.Error("On denetim baglantisi basarisiz: " + server.Text.Trim(), ex);
+            }
+
+            if (!statusOk)
+            {
+                confirmItems.Clear();
+                foreach (BatchOp op in ops)
+                {
+                    ConfirmForm.ConfirmItem confirmItem = new ConfirmForm.ConfirmItem();
+                    confirmItem.File = op.Item;
+                    confirmItem.RestoreOp = true;
+                    confirmItem.RestoreTargetFolder = targetFolder;
+                    confirmItem.StatusChecked = false;
+                    confirmItems.Add(confirmItem);
+                }
+            }
+#if DEBUG
+            if (selftestActive) SelfTestLogPreflight(confirmItems, statusOk);
+#endif
+            bool showDialog = true;
+#if DEBUG
+            showDialog = !suppressConfirm;
+#endif
+            if (showDialog)
+            {
+                using (ConfirmForm dialog = new ConfirmForm(confirmItems,
+                    ConfirmForm.OperationMode.Restore, statusOk))
+                {
+                    if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                }
+            }
+            for (int i = 0; i < ops.Count; i++)
+                ops[i].RestoreFolder = targetFolder;
             batchTotal = ops.Count;
             busy = true;
             SetBusyState();
@@ -942,8 +1198,8 @@ namespace DbMount
             string password = (string)args[3];
             List<BatchOp> ops = (List<BatchOp>)args[4];
             BatchResult result = new BatchResult();
-            Log.Info("Toplu islem baslatildi: " + (ops.Count > 0 && ops[0].AttachOp
-                ? "ekle" : "cikar") + ", oge sayisi=" + ops.Count + ", sunucu=" + serverName);
+            Log.Info("Toplu islem baslatildi: " + DescribeKind(ops.Count > 0 ? ops[0].Kind : OpKind.Attach) +
+                ", oge sayisi=" + ops.Count + ", sunucu=" + serverName);
             try
             {
                 using (System.Data.SqlClient.SqlConnection probe =
@@ -957,25 +1213,55 @@ namespace DbMount
                             using (System.Data.SqlClient.SqlConnection connection =
                                 SqlOps.OpenConnection(serverName, !sqlAuth, user, password))
                             {
-                                if (op.AttachOp) SqlOps.AttachDatabase(connection, op.Item);
-                                else SqlOps.DetachDatabase(connection, op.Item.AttachedName);
+                                if (op.Kind == OpKind.Attach)
+                                {
+                                    SqlOps.AttachDatabase(connection, op.Item);
+                                    op.Message = "Eklendi";
+                                }
+                                else if (op.Kind == OpKind.Detach)
+                                {
+                                    SqlOps.DetachDatabase(connection, op.Item.AttachedName);
+                                    op.Message = "Çıkarıldı";
+                                }
+                                else
+                                {
+                                    BackupHeader header = SqlOps.QueryBackupHeader(
+                                        connection, op.Item.MdfPath);
+                                    if (header.Type != 1 && header.Type != 5)
+                                    {
+                                        throw new ApplicationException(
+                                            "Bu bir tam veritabanı yedeği değil (tür " +
+                                            header.Type + "). Yalnızca tam yedekler " +
+                                            "geri yüklenebilir.");
+                                    }
+                                    HashSet<string> names = SqlOps.QueryDatabaseNames(connection);
+                                    bool replace = names.Contains(header.DatabaseName);
+                                    SqlOps.RestoreDatabase(connection, op.Item.MdfPath,
+                                        header.DatabaseName, op.RestoreFolder, replace);
+                                    op.Message = replace
+                                        ? "Geri yüklendi (üzerine yazıldı)"
+                                        : "Geri yüklendi";
+                                }
                             }
                             op.Ok = true;
-                            op.Message = op.AttachOp ? "Eklendi" : "Çıkarıldı";
                             result.Success++;
-                            Log.Info("Islem basarili: " + (op.AttachOp ? "ekle " : "cikar ") +
+                            Log.Info("Islem basarili: " + DescribeKind(op.Kind) + " " +
                                 op.Item.Name + " (" + op.Item.MdfPath + ")");
                         }
                         catch (Exception ex)
                         {
                             op.Ok = false;
                             op.Message = SqlOps.TranslateSqlError(ex);
-                            Log.Error("Islem basarisiz: " + (op.AttachOp ? "ekle " : "cikar ") +
+                            Log.Error("Islem basarisiz: " + DescribeKind(op.Kind) + " " +
                                 op.Item.Name + " (" + op.Item.MdfPath + ")", ex);
                         }
                         batchWorker.ReportProgress(i + 1, op);
                     }
-                    try { result.AttachedMap = SqlOps.QueryAttachedFiles(probe); }
+                    try
+                    {
+                        result.AttachedMap = SqlOps.QueryAttachedFiles(probe);
+                        result.DatabaseNames = SqlOps.QueryDatabaseNames(probe);
+                    }
                     catch (Exception ex) { Log.Error("Durum yenileme", ex); }
                     result.ConnectionOk = true;
                     Log.Info("Toplu islem bitti: basarili=" + result.Success +
@@ -1027,7 +1313,13 @@ namespace DbMount
                 connStatus.Text = "●  Bağlı: " + server.Text.Trim();
                 railStatus.ForeColor = Success;
                 railStatus.Text = "●  Bağlı: " + server.Text.Trim();
-                RefreshStates(result.AttachedMap);
+                if (!String.IsNullOrEmpty(lastRestoreFolder) &&
+                    lastRestoreFolder.Equals(folderBox.Text.Trim(),
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    LoadFolder();
+                }
+                RefreshStates(result.AttachedMap, result.DatabaseNames);
                 int failed = Math.Max(0, total - result.Success);
                 if (failed == 0)
                 {
@@ -1062,11 +1354,6 @@ namespace DbMount
                             ProductInfo.DisplayName, MessageBoxButtons.YesNo,
                             MessageBoxIcon.Warning);
                         if (upload == DialogResult.Yes) StartUpload();
-                    }
-                    else
-                    {
-                        MessageBox.Show(summary.ToString(), ProductInfo.DisplayName,
-                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     }
                 }
 #if DEBUG
@@ -1139,7 +1426,7 @@ namespace DbMount
             string extraFile = Path.Combine(extraFolder, "SQLdbTestD.mdf");
             if (File.Exists(extraFile))
             {
-                AddFiles(new string[] { extraFile });
+                AddFiles(new string[] { extraFile }, ItemKind.Mdf);
                 SelfTestLog("Ek dosya eklendi (klasor disi): " + extraFile);
                 SelfTestLog("Liste oge sayisi (ek sonrasi): " + items.Count);
             }
@@ -1160,7 +1447,7 @@ namespace DbMount
             SetAllChecks(true);
             selftestPhase = 1;
             SelfTestLog("Asama 1: Ekle baslatiliyor (" + items.Count + " oge)");
-            StartBatch(true);
+            StartBatch(OpKind.Attach);
         }
 
         private void SelfTestLogPreflight(List<ConfirmForm.ConfirmItem> confirmItems,
@@ -1170,10 +1457,18 @@ namespace DbMount
             foreach (ConfirmForm.ConfirmItem item in confirmItems)
             {
                 string info = "  - " + item.File.Name + " (" +
-                    (item.AttachOp ? "eklenecek" : "cikarilacak") + ")";
-                if (item.StatusChecked && !item.AttachOp)
+                    (item.RestoreOp ? "geri yuklenecek" : (item.AttachOp ? "eklenecek" : "cikarilacak")) + ")";
+                if (item.RestoreOp)
+                {
+                    info += " db=" + (item.RestoreDbName ?? "?") +
+                        " uzerineYaz=" + (item.RestoreReplace ? "EVET" : "hayir") +
+                        " tur=" + item.RestoreType +
+                        " hedefDosya=" + (item.RestoreTargetExists ? "VAR" : "yok") +
+                        " kilitli=" + (item.FileLocked ? "EVET" : "hayir");
+                }
+                else if (item.StatusChecked && !item.AttachOp)
                     info += " oturum=" + item.SessionCount;
-                if (item.StatusChecked && item.AttachOp)
+                else if (item.StatusChecked && item.AttachOp)
                     info += " kilitli=" + (item.FileLocked ? "EVET" : "hayir");
                 SelfTestLog(info);
             }
@@ -1195,19 +1490,65 @@ namespace DbMount
                 SelfTestLog("Asama 1 bitti, bagli sayisi: " + attached);
                 selftestPhase = 2;
                 SelfTestLog("Asama 2: Cikar baslatiliyor");
-                StartBatch(false);
+                StartBatch(OpKind.Detach);
             }
             else if (selftestPhase == 2)
             {
                 int attached = 0;
                 foreach (DatabaseFile item in items)
                 {
+                    if (String.IsNullOrEmpty(item.LastResult)) continue;
                     SelfTestLog("  Cikar sonucu - " + item.Name + ": " +
                         (item.LastOk ? "OK" : "HATA: " + item.LastResult) +
                         ", durum=" + (item.Attached ? "bagli" : "bagli degil"));
                     if (item.Attached) attached++;
                 }
                 SelfTestLog("Asama 2 bitti, bagli kalan: " + attached);
+                selftestPhase = 3;
+                string extraFolder = folderBox.Text.TrimEnd('\\') + "_extra";
+                List<string> baks = new List<string>();
+                string backupFile = Path.Combine(extraFolder, "SQLdbTestD.bak");
+                if (File.Exists(backupFile)) baks.Add(backupFile);
+                string logBackup = Path.Combine(extraFolder, "SQLdbTestD_log.bak");
+                if (File.Exists(logBackup)) baks.Add(logBackup);
+                if (baks.Count > 0)
+                {
+                    AddFiles(baks.ToArray(), ItemKind.Bak);
+                    int wait = 0;
+                    while (busy && wait < 100)
+                    {
+                        Application.DoEvents();
+                        System.Threading.Thread.Sleep(100);
+                        wait++;
+                    }
+                    SelfTestLog("Asama 3: Geri yukle baslatiliyor (" + baks.Count +
+                        " yedek: " + String.Join(", ", baks.ToArray()) + ")");
+                    StartRestore();
+                }
+                else
+                {
+                    SelfTestLog("Asama 3 atlandi: yedek dosyasi yok");
+                    SelfTestLog("SELF TEST TAMAM");
+                    Application.Exit();
+                }
+            }
+            else if (selftestPhase == 3)
+            {
+                foreach (DatabaseFile item in items)
+                {
+                    if (String.IsNullOrEmpty(item.LastResult)) continue;
+                    SelfTestLog("  Geri yukle sonucu - " + item.Name + ": " +
+                        (item.LastOk ? "OK" : "HATA: " + item.LastResult));
+                }
+                bool restoredDbAttached = false;
+                foreach (DatabaseFile item in items)
+                {
+                    if (item.Kind == ItemKind.Mdf && item.Attached &&
+                        item.Name.Equals("SQLdbTestD", StringComparison.OrdinalIgnoreCase))
+                        restoredDbAttached = true;
+                }
+                SelfTestLog("Geri yuklenen DB listede bagli: " +
+                    (restoredDbAttached ? "EVET" : "HAYIR"));
                 SelfTestLog("SELF TEST TAMAM");
                 Application.Exit();
             }
@@ -1233,6 +1574,7 @@ namespace DbMount
             internal string Edition = "";
             internal string Host = "";
             internal Dictionary<string, string> AttachedMap;
+            internal HashSet<string> DatabaseNames;
         }
 
         private sealed class BatchResult
@@ -1241,14 +1583,23 @@ namespace DbMount
             internal int Success;
             internal string ConnectionError = "";
             internal Dictionary<string, string> AttachedMap;
+            internal HashSet<string> DatabaseNames;
         }
 
         private sealed class BatchOp
         {
             internal DatabaseFile Item;
-            internal bool AttachOp;
+            internal OpKind Kind;
+            internal string RestoreFolder = "";
             internal bool Ok;
             internal string Message = "";
+        }
+
+        private static string DescribeKind(OpKind kind)
+        {
+            if (kind == OpKind.Attach) return "ekle";
+            if (kind == OpKind.Detach) return "cikar";
+            return "geri yukle";
         }
 
         private sealed class PasswordForm : Form

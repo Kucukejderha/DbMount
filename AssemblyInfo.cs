@@ -7,5 +7,5 @@ using System.Reflection;
 [assembly: AssemblyCompany("Rota Bilişim Hizmetleri")]
 [assembly: AssemblyProduct("ASCOS DbMount")]
 [assembly: AssemblyCopyright("Copyright © 2026 Rota Bilişim Hizmetleri")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]

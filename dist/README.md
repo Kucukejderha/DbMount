@@ -1,11 +1,11 @@
-# ASCOS DbMount 1.1
+# ASCOS DbMount 1.2
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 
 ASCOS DbMount; bir klasördeki MSSQL veritabanı dosyalarını (MDF/NDF/LDF) SQL Server
 örneklerine **toplu veya tek tek bağlamaya (mount/attach)** ve **ayırmaya
-(unmount/detach)** yarayan, ASCOS kurumsal temasına sahip bir Windows masaüstü
-uygulamasıdır.
+(unmount/detach)**, ayrıca **yedek dosyalarından (.bak) geri yüklemeye (restore)**
+yarayan, ASCOS kurumsal temasına sahip bir Windows masaüstü uygulamasıdır.
 
 ## Ne yapar
 
@@ -13,7 +13,12 @@ uygulamasıdır.
   dosyaları boyutlarıyla listelenir.
 - **Dosya seç…** ile bilgisayarın herhangi bir yerinden MDF dosyaları da
   listeye eklenebilir; dosyalar bulundukları klasörde yerinde bağlanır.
-- Her dosya için sunucudaki durumu gösterilir: **Bağlı** veya **Bağlı değil**.
+- **Yedek seç…** ile `.bak` yedek dosyaları listeye eklenir; **Geri yükle**
+  ile seçilen tam yedekler sunucuya geri yüklenir. Geri yüklenen dosyaların
+  konacağı **hedef klasör her seferinde sorulur**.
+- Her dosya için sunucudaki durumu gösterilir: **Bağlı / Bağlı değil**;
+  yedekler için yedeğin içindeki veritabanı adı ve sunucuda aynı adlı
+  veritabanının olup olmadığı gösterilir.
 - Dosyaları tek tek işaretleyin veya **Tümünü seç** ile toplu işlem yapın.
 - **Ekle** seçili dosyaları sunucuya bağlar; **Çıkar** seçili bağlı
   veritabanlarını sunucudan ayırır.
@@ -24,11 +29,16 @@ uygulamasıdır.
     "Logo/Netsis gibi bir uygulama kullanıyor olabilir" uyarısı gösterilir.
   - Ekleme için: dosyanın başka bir uygulama veya SQL Server örneği
     tarafından kilitli olup olmadığı denetlenir.
+  - Geri yükleme için: yedek türü (yalnızca tam yedek), aynı adlı veritabanı
+    (onaylarsanız REPLACE ile üzerine yazılır) ve hedef klasördeki dosya
+    çakışmaları denetlenir.
 - Dosyalar hiçbir zaman taşınmaz veya silinmez.
 - Veritabanına ait tüm dosyalar (MDF + NDF + LDF) MDF başlığından otomatik
   algılanır; LDF'siz dosyalar için log dosyası yeniden oluşturulur.
 - Çıkarma işleminde etkin bağlantılar `SINGLE_USER WITH ROLLBACK IMMEDIATE`
   ile kapatılır.
+- Geri yükleme tamamlandığında veritabanı sunucuda bağlı kalır; hedef klasör
+  seçili dosya yoluysa yeni dosyalar listede otomatik görünür.
 
 ## Hata kaydı ve destek
 
@@ -77,9 +87,11 @@ değeridir; sunucu adresinize göre güncelleyip yeniden derleyin.
    için kullanıcı adı/parola girin. Parola, **Parolayı anımsa** işaretliyse
    Windows DPAPI ile şifrelenip `HKCU\SOFTWARE\ASCOS\DbMount` altında saklanır.
 3. **Bağlantıyı sına** ile bağlantıyı doğrulayın.
-4. **Dosya yolu** satırındaki **Klasör seç…** ile klasörü seçin veya
-   **Dosya seç…** ile tek tek MDF dosyaları ekleyin.
-5. Listeden dosyaları işaretleyin; **Ekle** veya **Çıkar** düğmesini kullanın.
+4. **Dosya yolu** satırındaki **Klasör seç…** ile klasörü seçin,
+   **Dosya seç…** ile tek tek MDF dosyaları veya **Yedek seç…** ile `.bak`
+   yedekleri ekleyin.
+5. Listeden dosyaları işaretleyin; **Ekle**, **Çıkar** veya **Geri yükle**
+   düğmesini kullanın. Geri yüklemede hedef klasör sorulur.
 6. Onay penceresinde işlem listesini ve uyarıları gözden geçirip **Devam et**
    deyin.
 7. İşlemler arka planda sırayla yürütülür; sonuç her satırda ve alt durum

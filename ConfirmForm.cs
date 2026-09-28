@@ -20,40 +20,54 @@ namespace DbMount
         private static readonly Color InfoBorder = Color.FromArgb(190, 213, 238);
         private static readonly Font WarningFont = new Font("Segoe UI", 8F);
 
+        internal enum OperationMode { Attach, Detach, Restore }
+
         internal sealed class ConfirmItem
         {
             internal DatabaseFile File;
             internal bool AttachOp;
+            internal bool RestoreOp;
             internal int SessionCount = -1;
             internal bool FileLocked;
             internal bool StatusChecked;
+            internal string RestoreDbName;
+            internal string RestoreTargetFolder = "";
+            internal bool RestoreReplace;
+            internal bool RestoreInvalid;
+            internal int RestoreType;
+            internal bool RestoreTargetExists;
         }
 
         private readonly List<ConfirmItem> items;
-        private readonly bool attachMode;
+        private readonly OperationMode mode;
         private readonly bool statusChecked;
         private readonly ListBox list = new ListBox();
 
-        internal ConfirmForm(List<ConfirmItem> confirmItems, bool attachOperation, bool statusOk)
+        internal ConfirmForm(List<ConfirmItem> confirmItems, OperationMode operationMode,
+            bool statusOk)
         {
             items = confirmItems;
-            attachMode = attachOperation;
+            mode = operationMode;
             statusChecked = statusOk;
 
-            Text = (attachMode ? "Ekleme onayı" : "Çıkarma onayı") + " — " + ProductInfo.DisplayName;
+            string modeText = mode == OperationMode.Attach
+                ? "Ekleme onayı" : (mode == OperationMode.Detach ? "Çıkarma onayı" : "Geri yükleme onayı");
+            string verb = mode == OperationMode.Attach
+                ? "eklenecek" : (mode == OperationMode.Detach ? "çıkarılacak" : "geri yüklenecek");
+
+            Text = modeText + " — " + ProductInfo.DisplayName;
             Font = new Font("Segoe UI", 9F);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
-            ClientSize = new Size(620, 480);
+            ClientSize = new Size(640, 480);
             BackColor = Canvas;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
             Label title = new Label {
-                Text = items.Count + " veritabanı " +
-                    (attachMode ? "eklenecek" : "çıkarılacak"),
+                Text = items.Count + " veritabanı " + verb,
                 ForeColor = Ink, Font = new Font("Segoe UI Semibold", 14F),
                 AutoSize = true, Location = new Point(22, 18)
             };
@@ -65,7 +79,7 @@ namespace DbMount
             Panel listFrame = new Panel {
                 BackColor = Color.White, Padding = new Padding(1),
                 Location = new Point(22, 78),
-                Size = new Size(576, 288),
+                Size = new Size(596, 288),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             listFrame.Paint += delegate(object sender, PaintEventArgs e) {
@@ -87,7 +101,7 @@ namespace DbMount
             Panel notice = new Panel {
                 BackColor = statusChecked ? InfoBack : Color.FromArgb(253, 241, 240),
                 Location = new Point(22, 374),
-                Size = new Size(576, 48),
+                Size = new Size(596, 52),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             notice.Paint += delegate(object sender, PaintEventArgs e) {
@@ -96,24 +110,27 @@ namespace DbMount
                     ButtonBorderStyle.Solid);
             };
             Label noticeText = new Label {
-                AutoSize = true, Location = new Point(14, 15), MaximumSize = new Size(548, 0),
+                AutoSize = true, Location = new Point(14, 16), MaximumSize = new Size(568, 0),
                 ForeColor = statusChecked ? InfoInk : Danger,
                 Font = new Font("Segoe UI", 8.5F)
             };
             if (!statusChecked)
                 noticeText.Text = "⚠  Sunucu durumu denetlenemedi; bağlantı ayarlarınızı kontrol edin. " +
                     "Yine de devam edebilirsiniz, hatalar işlem sırasında bildirilir.";
-            else if (attachMode)
+            else if (mode == OperationMode.Attach)
                 noticeText.Text = "ⓘ  İşlem dosyaları taşımaz; veritabanları bulundukları klasörde yerinde kalır.";
-            else
+            else if (mode == OperationMode.Detach)
                 noticeText.Text = "ⓘ  Dosyalar silinmez; klasörde kalır. Etkin bağlantılar otomatik olarak kapatılır.";
+            else
+                noticeText.Text = "ⓘ  Geri yüklenen dosyalar seçilen hedef klasöre yazılır. " +
+                    "Aynı adlı veritabanı varsa onayınızla üzerine yazılır (REPLACE).";
             notice.Controls.Add(noticeText);
 
             Button cancel = MakeButton("İptal", false);
-            cancel.Location = new Point(400, 436);
+            cancel.Location = new Point(420, 436);
             cancel.Click += delegate { DialogResult = DialogResult.Cancel; };
             Button proceed = MakeButton("Devam et", true);
-            proceed.Location = new Point(494, 436);
+            proceed.Location = new Point(514, 436);
             proceed.Click += delegate { DialogResult = DialogResult.OK; };
             AcceptButton = proceed;
             CancelButton = cancel;
@@ -149,9 +166,22 @@ namespace DbMount
                 TextRenderer.DrawText(e.Graphics, item.File.Name, nameFont, nameBounds, Ink,
                     TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
-            string action = item.AttachOp
-                ? "Sunucuya eklenecek"
-                : "Sunucudan çıkarılacak — dosyalar silinmez";
+            string action;
+            if (item.RestoreOp)
+            {
+                action = "Yedekten geri yüklenecek: " +
+                    (String.IsNullOrEmpty(item.RestoreDbName) ? "?" : item.RestoreDbName);
+                if (!String.IsNullOrEmpty(item.RestoreTargetFolder))
+                    action = action + " — hedef: " + item.RestoreTargetFolder;
+            }
+            else if (item.AttachOp)
+            {
+                action = "Sunucuya eklenecek";
+            }
+            else
+            {
+                action = "Sunucudan çıkarılacak — dosyalar silinmez";
+            }
             int x = e.Bounds.Left + 16;
             int y = e.Bounds.Top + 27;
             Rectangle actionBounds = new Rectangle(x, y, e.Bounds.Width - 32, 17);
@@ -166,10 +196,20 @@ namespace DbMount
                 TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
             string warning = null;
-            if (item.StatusChecked && !item.AttachOp && item.SessionCount > 0)
+            if (item.RestoreOp && item.StatusChecked && item.RestoreInvalid)
+                warning = "⚠  Bu bir tam veritabanı yedeği değil (tür " + item.RestoreType +
+                    ") — geri yüklenemez.";
+            else if (item.RestoreOp && item.StatusChecked && item.RestoreReplace)
+                warning = "⚠  Sunucuda aynı adlı veritabanı var — onaylarsanız üzerine yazılacak (REPLACE).";
+            else if (item.RestoreOp && item.StatusChecked && item.RestoreTargetExists)
+                warning = "⚠  Hedef klasörde aynı adlı dosya(lar) var — veritabanı bağlı değilse " +
+                    "geri yükleme hata verir; dosyaları taşıyın veya başka klasör seçin.";
+            else if (item.RestoreOp && item.StatusChecked && item.FileLocked)
+                warning = "⚠  Yedek dosyası başka bir uygulama tarafından kullanılıyor olabilir.";
+            else if (item.StatusChecked && !item.RestoreOp && !item.AttachOp && item.SessionCount > 0)
                 warning = "⚠  " + item.SessionCount + " etkin bağlantı var — Logo/Netsis gibi " +
                     "bir uygulama bu veritabanını kullanıyor olabilir; işlem bağlantıları kapatacak.";
-            else if (item.StatusChecked && item.AttachOp && item.FileLocked)
+            else if (item.StatusChecked && !item.RestoreOp && item.AttachOp && item.FileLocked)
                 warning = "⚠  Dosya başka bir uygulama veya SQL Server örneği tarafından kullanılıyor olabilir.";
             else if (!item.StatusChecked)
                 warning = "Durum denetlenemedi";

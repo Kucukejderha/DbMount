@@ -50,6 +50,8 @@ her satırda durum (Bağlı / Bağlı değil) ve dosya boyutları gösterilir.</
 bilgisayarın herhangi bir yerinden bir veya daha fazla MDF dosyası seçip
 listeye ekleyebilirsiniz. Bu dosyalar bulundukları klasörde yerinde bağlanır;
 liste seçimleri klasör değişikliğinden sonra da korunur.</p>
+<p><b>Yedek seç…</b> düğmesiyle `.bak` yedek dosyaları da listeye eklenir;
+yedekler geri yükleme bölümünde açıklanır.</p>
 <p class="note">ⓘ Klasör taramasında yalnızca seçilen ana klasöre bakılır; alt klasörlere inilmez.</p>
 </div>
 
@@ -74,6 +76,8 @@ olarak sorulur. Böylece hata incelenip uygulama düzeltilebilir.</p>
 kırmızı uyarı gösterilir: <b>"N etkin bağlantı var — Logo/Netsis gibi bir uygulama
 bu veritabanını kullanıyor olabilir; işlem bağlantıları kapatacak."</b></li>
 <li>Eklenecek dosya başka bir uygulama veya örnek tarafından kilitliyse uyarı gösterilir.</li>
+<li>Geri yüklenecek yedek tam yedek değilse veya sunucuda aynı adlı veritabanı
+varsa (onaylarsanız REPLACE ile üzerine yazılır) uyarı gösterilir.</li>
 </ul>
 <p>Listeyi gözden geçirip <b>Devam et</b> demeden hiçbir işlem başlamaz.</p>
 </div>
@@ -99,6 +103,25 @@ bu veritabanını kullanıyor olabilir; işlem bağlantıları kapatacak."</b></
 ve veritabanı sunucudan ayrılır. Dosyalar klasörde kalır; istenirse taşınabilir.</p>
 </div>
 
+<h2>7. Yedekten geri yükleme (Restore)</h2>
+<div class="card">
+<p><span class="step">1.</span> <b>Yedek seç…</b> ile bir veya daha fazla `.bak` dosyasını listeye ekleyin.
+Liste satırında yedeğin içindeki veritabanı adı ve sunucuda aynı adlı
+veritabanının olup olmadığı gösterilir.</p>
+<p><span class="step">2.</span> Yedekleri işaretleyin ve <b>Geri yükle</b> düğmesine basın.</p>
+<p><span class="step">3.</span> Geri yüklenen dosyaların konacağı <b>hedef klasörü</b> seçin.</p>
+<p><span class="step">4.</span> Onay penceresinde uyarıları gözden geçirip <b>Devam et</b> deyin:</p>
+<ul>
+<li>Sunucuda aynı adlı veritabanı varsa onayınızla <code>REPLACE</code> ile üzerine yazılır.</li>
+<li>Log/fark yedekleri geri yüklenemez; yalnızca tam yedekler kabul edilir.</li>
+<li>Hedef klasörde çakışan dosya varsa uyarı gösterilir.</li>
+</ul>
+<p><span class="step">5.</span> Geri yükleme tamamlanınca veritabanı sunucuda bağlı kalır; hedef klasör
+seçili dosya yoluysa yeni MDF dosyaları listede görünür.</p>
+<p class="note">ⓘ Yedeklerin bulunduğu klasöre ve hedef klasöre SQL Server hizmet hesabının
+okuma/yazma izni olmalıdır.</p>
+</div>
+
 <h2>Sık karşılaşılan hatalar</h2>
 <div class="card">
 <table>
@@ -108,11 +131,15 @@ ve veritabanı sunucudan ayrılır. Dosyalar klasörde kalır; istenirse taşın
 <tr><td>Veritabanı sürümü daha yeni</td><td>Dosya hedef sunucudan daha yeni bir sürümde; güncel bir örneğe bağlanın.</td></tr>
 <tr><td>Oturum açılamadı (18456)</td><td>Kullanıcı adı/parola veya Windows yetkisi geçersiz.</td></tr>
 <tr><td>Sunucuya ulaşılamadı</td><td>Sunucu adını ve SQL Server hizmetinin çalıştığını denetleyin.</td></tr>
+<tr><td>Yedek farklı sürümde</td><td>Yedek, hedef sunucudan daha yeni bir sürümde alınmış; güncel bir örneğe bağlanın.</td></tr>
+<tr><td>Yedek açılamadı</td><td>SQL Server hizmet hesabının yedek dosyasına erişim izni yok.</td></tr>
+<tr><td>Dosya üzerine yazılamadı</td><td>Hedef klasörde aynı adlı dosya var; dosyayı taşıyın veya başka klasör seçin.</td></tr>
+<tr><td>Tam yedek değil</td><td>Log/fark yedekleri geri yüklenemez; tam yedek dosyasını seçin.</td></tr>
 </table>
 </div>
 
 <div class="warn">ⓘ Ekleme ve çıkarma işlemi için hedef sunucuda <b>sysadmin</b> yetkisi gerekir.</div>
 
-<p style="color:#617187; font-size:13px;">ASCOS DbMount 1.1.0 — <a href="https://rotaniz.com/ascos-araclar/">rotaniz.com/ascos-araclar</a> · AGPL-3.0</p>
+<p style="color:#617187; font-size:13px;">ASCOS DbMount 1.2.0 — <a href="https://rotaniz.com/ascos-araclar/">rotaniz.com/ascos-araclar</a> · AGPL-3.0</p>
 </body>
 </html>

@@ -10,6 +10,8 @@ using Microsoft.Win32;
 
 namespace DbMount
 {
+    internal enum ItemKind { Mdf, Bak }
+
     internal sealed class DatabaseFile
     {
         internal readonly string MdfPath;
@@ -22,6 +24,10 @@ namespace DbMount
         internal string AttachedName;
         internal string LastResult;
         internal bool LastOk;
+        internal ItemKind Kind = ItemKind.Mdf;
+        internal string BackupDatabaseName;
+        internal int BackupType;
+        internal DateTime BackupDate;
 
         internal DatabaseFile(string mdfPath)
         {
@@ -34,6 +40,11 @@ namespace DbMount
         internal string FileSummary()
         {
             StringBuilder builder = new StringBuilder();
+            if (Kind == ItemKind.Bak)
+            {
+                builder.Append("bak " + FormatSize(MdfSize));
+                return builder.ToString();
+            }
             builder.Append("mdf " + FormatSize(MdfSize));
             string folder = Path.GetDirectoryName(MdfPath);
             string ownName = Path.GetFileName(MdfPath);
@@ -75,6 +86,20 @@ namespace DbMount
             }
             return value.ToString(unit == 0 ? "0" : "0.#") + " " + units[unit];
         }
+    }
+
+    internal sealed class BackupHeader
+    {
+        internal string DatabaseName = "";
+        internal int Type;
+        internal DateTime BackupDate;
+    }
+
+    internal sealed class BackupFileEntry
+    {
+        internal string LogicalName = "";
+        internal string PhysicalName = "";
+        internal string Type = "";
     }
 
     internal static class SqlOps
@@ -222,6 +247,113 @@ namespace DbMount
                 catch { return true; }
             }
             return false;
+        }
+
+        internal static bool AnyFileLocked(string path)
+        {
+            try
+            {
+                using (FileStream stream = new FileStream(path, FileMode.Open,
+                    FileAccess.Read, FileShare.None)) { }
+                return false;
+            }
+            catch { return true; }
+        }
+
+        internal static BackupHeader QueryBackupHeader(SqlConnection connection,
+            string backupPath)
+        {
+            using (SqlCommand command = new SqlCommand(
+                "RESTORE HEADERONLY FROM DISK = '" + EscapeSql(backupPath) + "'", connection))
+            using (SqlDataReader reader = command.ExecuteReader())
+            {
+                BackupHeader header = new BackupHeader();
+                if (reader.Read())
+                {
+                    header.DatabaseName = reader.GetString(reader.GetOrdinal("DatabaseName"));
+                    header.Type = Convert.ToInt32(reader.GetValue(reader.GetOrdinal("BackupType")));
+                    header.BackupDate = Convert.ToDateTime(
+                        reader.GetValue(reader.GetOrdinal("BackupFinishDate")));
+                }
+                return header;
+            }
+        }
+
+        internal static List<BackupFileEntry> QueryBackupFileList(SqlConnection connection,
+            string backupPath)
+        {
+            List<BackupFileEntry> entries = new List<BackupFileEntry>();
+            using (SqlCommand command = new SqlCommand(
+                "RESTORE FILELISTONLY FROM DISK = '" + EscapeSql(backupPath) + "'", connection))
+            using (SqlDataReader reader = command.ExecuteReader())
+            {
+                int logicalIndex = reader.GetOrdinal("LogicalName");
+                int physicalIndex = reader.GetOrdinal("PhysicalName");
+                int typeIndex = reader.GetOrdinal("Type");
+                while (reader.Read())
+                {
+                    BackupFileEntry entry = new BackupFileEntry();
+                    entry.LogicalName = reader.GetString(logicalIndex);
+                    entry.PhysicalName = reader.IsDBNull(physicalIndex) ? "" : reader.GetString(physicalIndex);
+                    entry.Type = reader.GetString(typeIndex);
+                    entries.Add(entry);
+                }
+            }
+            return entries;
+        }
+
+        internal static HashSet<string> QueryDatabaseNames(SqlConnection connection)
+        {
+            HashSet<string> names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (SqlCommand command = new SqlCommand(
+                "SELECT name FROM sys.databases WHERE database_id > 4", connection))
+            using (SqlDataReader reader = command.ExecuteReader())
+            {
+                while (reader.Read()) names.Add(reader.GetString(0));
+            }
+            return names;
+        }
+
+        internal static void RestoreDatabase(SqlConnection connection, string backupPath,
+            string databaseName, string targetFolder, bool replace)
+        {
+            List<BackupFileEntry> entries = QueryBackupFileList(connection, backupPath);
+            if (entries.Count == 0)
+                throw new ApplicationException("Yedek dosyasında veritabanı dosya listesi okunamadı.");
+            foreach (BackupFileEntry entry in entries)
+            {
+                if (entry.Type.Equals("S", StringComparison.OrdinalIgnoreCase))
+                    throw new ApplicationException(
+                        "FILESTREAM içeren yedekler desteklenmiyor. Bu yedeği SQL Server " +
+                        "Management Studio ile geri yükleyin.");
+            }
+            StringBuilder sql = new StringBuilder();
+            sql.Append("RESTORE DATABASE [");
+            sql.Append(databaseName.Replace("]", "]]"));
+            sql.Append("] FROM DISK = '");
+            sql.Append(EscapeSql(backupPath));
+            sql.Append("' WITH ");
+            List<string> moves = new List<string>();
+            foreach (BackupFileEntry entry in entries)
+            {
+                string fileName = Path.GetFileName(entry.PhysicalName.Trim());
+                if (String.IsNullOrEmpty(fileName))
+                    fileName = entry.LogicalName +
+                        (entry.Type.Equals("L", StringComparison.OrdinalIgnoreCase) ? ".ldf" : ".mdf");
+                string target = Path.Combine(targetFolder, fileName);
+                moves.Add("MOVE '" + EscapeSql(entry.LogicalName) + "' TO '" +
+                    EscapeSql(target) + "'");
+            }
+            sql.Append(String.Join(", ", moves.ToArray()));
+            if (replace) sql.Append(", REPLACE");
+            sql.Append(", RECOVERY");
+            using (SqlCommand command = new SqlCommand(sql.ToString(), connection))
+                command.ExecuteNonQuery();
+        }
+
+        internal static string EscapeSql(string value)
+        {
+            return value == null ? "" : value.Replace("'", "''");
         }
 
         internal static List<DatabaseFile> ScanFolder(string folder)
@@ -430,6 +562,20 @@ namespace DbMount
                 if (message.IndexOf("already exists",
                     StringComparison.OrdinalIgnoreCase) >= 0)
                     return "Sunucuda aynı ada sahip bir veritabanı zaten var.";
+                if (message.IndexOf("created by a different version",
+                    StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    message.IndexOf("was backed up on a server running version",
+                    StringComparison.OrdinalIgnoreCase) >= 0)
+                    return "Yedek, bu sunucudan daha yeni bir SQL Server sürümünde alınmış. " +
+                        "Daha güncel bir örneğe bağlanın.";
+                if (message.IndexOf("Cannot open backup device",
+                    StringComparison.OrdinalIgnoreCase) >= 0)
+                    return "Yedek dosyası açılamadı. SQL Server hizmet hesabının dosyaya " +
+                        "erişim izni olduğundan emin olun.";
+                if (message.IndexOf("cannot be restored over the existing",
+                    StringComparison.OrdinalIgnoreCase) >= 0)
+                    return "Hedef klasörde aynı adlı dosya var; üzerine yazılamadı. " +
+                        "Hedef klasörü değiştirin veya çakışan dosyayı taşıyın.";
             }
             return ex.Message;
         }
